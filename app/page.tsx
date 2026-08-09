@@ -12,6 +12,8 @@ declare global {
 export default function Home() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState("");
   const [supply, setSupply] = useState("");
   const [status, setStatus] = useState("Wallet not connected");
   const [address, setAddress] = useState("");
@@ -62,6 +64,25 @@ export default function Home() {
     }
   }
 
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setStatus("Please select an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setStatus("Logo must be smaller than 5MB");
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+    setStatus("Logo selected");
+  }
+
   async function deployToken() {
     if (busy) return;
 
@@ -109,6 +130,27 @@ export default function Home() {
       if (!artifact.abi || !artifact.bytecode) {
         throw new Error("ABI or bytecode is missing");
       }
+
+      if (!logoFile) {
+        throw new Error("Please select a token logo");
+      }
+
+      setStatus("Uploading token logo...");
+
+      const logoData = new FormData();
+      logoData.append("logo", logoFile);
+
+      const logoResponse = await fetch("/api/upload-logo", {
+        method: "POST",
+        body: logoData,
+      });
+
+      if (!logoResponse.ok) {
+        throw new Error("Logo upload failed");
+      }
+
+      const logoResult = await logoResponse.json();
+      console.log("Token logo:", logoResult);
 
       setStatus("Preparing deployment...");
 
