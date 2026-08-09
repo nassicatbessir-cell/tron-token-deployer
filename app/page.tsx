@@ -20,26 +20,44 @@ export default function Home() {
 
   async function connectWallet() {
     try {
-      if (!window.tronLink) {
-        setStatus("TronLink not detected");
+      setStatus("Detecting TronLink...");
+
+      for (let i = 0; i < 20; i++) {
+        if ((window as any).tronLink || (window as any).tronWeb) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      const tronLink = (window as any).tronLink;
+      const tronWeb = (window as any).tronWeb;
+
+      if (!tronLink && !tronWeb) {
+        setStatus("Open this page inside TronLink DApp browser");
         return;
       }
 
-      const result = await window.tronLink.request({
-        method: "tron_requestAccounts",
-      });
+      if (tronLink?.request) {
+        const result = await tronLink.request({
+          method: "tron_requestAccounts",
+        });
 
-      if (result?.code === 200) {
-        const account = window.tronWeb?.defaultAddress?.base58;
-        setStatus(
-          account
-            ? `Connected: ${account.slice(0, 7)}...${account.slice(-5)}`
-            : "Wallet connected"
-        );
-      } else {
-        setStatus("Connection rejected");
+        if (result?.code !== 200 && result?.code !== 0) {
+          throw new Error("Wallet connection was rejected");
+        }
       }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const activeTronWeb = (window as any).tronWeb;
+      const account = activeTronWeb?.defaultAddress?.base58;
+
+      if (!account) {
+        throw new Error("TronLink opened, but no active wallet account was found");
+      }
+
+      setAddress(account);
+      setStatus(`Connected: ${account.slice(0, 7)}...${account.slice(-5)}`);
     } catch (error: any) {
+      console.error(error);
       setStatus(error?.message || "Connection failed");
     }
   }
