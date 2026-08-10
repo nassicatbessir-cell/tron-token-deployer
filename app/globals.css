@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #05070b;
+  --foreground: #f5f7fa;
 }
 
 @theme inline {
@@ -12,15 +12,146 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #05070b !important;
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255, 0, 85, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 20%, rgba(0, 210, 255, 0.10), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(255, 0, 90, 0.08), transparent 35%),
+    linear-gradient(135deg, #030509 0%, #071018 45%, #05070b 100%) !important;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Glass surface */
+main {
+  position: relative;
+  overflow: hidden;
+}
+
+main > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Glass cards / panels */
+main > div,
+main section,
+main form,
+main article {
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+}
+
+/* Soft Tron/TronLink glass glow */
+button,
+input[type="file"] {
+  transition:
+    box-shadow 0.35s ease,
+    border-color 0.35s ease,
+    background 0.35s ease,
+    transform 0.25s ease;
+}
+
+/* Soft pulse around deployment-related controls */
+button {
+  border-color: rgba(255, 0, 92, 0.45) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 0, 92, 0.08),
+    0 0 22px rgba(255, 0, 92, 0.10),
+    inset 0 0 18px rgba(255, 0, 92, 0.035);
+  animation: softTronPulse 3.8s ease-in-out infinite;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px rgba(255, 0, 92, 0.22),
+    0 0 30px rgba(255, 0, 92, 0.22),
+    inset 0 0 20px rgba(0, 210, 255, 0.06);
+}
+
+/* Logo upload frame */
+input[type="file"] {
+  border: 1px solid rgba(0, 210, 255, 0.42) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  color: #f5f7fa !important;
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow:
+    0 0 0 1px rgba(0, 210, 255, 0.06),
+    0 0 20px rgba(0, 210, 255, 0.08),
+    inset 0 0 18px rgba(255, 255, 255, 0.025);
+  animation: softLogoPulse 4.6s ease-in-out infinite;
+}
+
+input[type="file"]:hover {
+  border-color: rgba(0, 210, 255, 0.75) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 210, 255, 0.12),
+    0 0 28px rgba(0, 210, 255, 0.16),
+    inset 0 0 18px rgba(0, 210, 255, 0.035);
+}
+
+/* Glass inputs */
+input,
+textarea,
+select {
+  background: rgba(255, 255, 255, 0.035) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Keep browser translation away from visible UI */
+.notranslate {
+  translate: no;
+}
+
+/* Very subtle animated glow */
+@keyframes softTronPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 0, 92, 0.06),
+      0 0 18px rgba(255, 0, 92, 0.07);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 0, 92, 0.15),
+      0 0 28px rgba(255, 0, 92, 0.15);
+  }
+}
+
+@keyframes softLogoPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(0, 210, 255, 0.05),
+      0 0 16px rgba(0, 210, 255, 0.06);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(0, 210, 255, 0.14),
+      0 0 25px rgba(0, 210, 255, 0.13);
+  }
+}
+
+/* Prevent harsh animation for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  button,
+  input[type="file"] {
+    animation: none;
+  }
 }
