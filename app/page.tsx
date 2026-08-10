@@ -1,1 +1,750 @@
-"use client";\n\nimport { useState } from "react";\n\ndeclare global {\n  interface Window {\n    tronLink?: any;\n    tronWeb?: any;\n  }\n}\n\nexport default function Home() {\n  const [name, setName] = useState("");\n  const [symbol, setSymbol] = useState("");\n  const [logoFile, setLogoFile] = useState<File | null>(null);\n  const [logoPreview, setLogoPreview] = useState("");\n  const [supply, setSupply] = useState("");\n  const [status, setStatus] = useState("Wallet not connected");\n  const [address, setAddress] = useState("");\n  const [txid, setTxid] = useState("");\n  const [busy, setBusy] = useState(false);\n\n  async function connectWallet() {\n    try {\n      setStatus("Detecting TronLink...");\n\n      for (let i = 0; i < 20; i++) {\n        if ((window as any).tronLink || (window as any).tronWeb) break;\n        await new Promise((resolve) => setTimeout(resolve, 250));\n      }\n\n      const tronLink = (window as any).tronLink;\n      const tronWeb = (window as any).tronWeb;\n\n      if (!tronLink && !tronWeb) {\n        setStatus("Open this page inside TronLink DApp browser");\n        return;\n      }\n\n      if (tronLink?.request) {\n        const result = await tronLink.request({\n          method: "tron_requestAccounts",\n        });\n\n        if (result?.code !== 200 && result?.code !== 0) {\n          throw new Error("Wallet connection was rejected");\n        }\n      }\n\n      await new Promise((resolve) => setTimeout(resolve, 500));\n\n      const activeTronWeb = (window as any).tronWeb;\n      const account = activeTronWeb?.defaultAddress?.base58;\n\n      if (!account) {\n        throw new Error("TronLink opened, but no active wallet account was found");\n      }\n\n      setAddress(account);\n      setStatus(`Connected: ${account.slice(0, 7)}...${account.slice(-5)}`);\n    } catch (error: any) {\n      console.error(error);\n      setStatus(error?.message || "Connection failed");\n    }\n  }\n\n  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {\n    const file = e.target.files?.[0];\n    if (!file) return;\n\n    if (!file.type.startsWith("image/")) {\n      setStatus("Please select an image file");\n      return;\n    }\n\n    if (file.size > 5 * 1024 * 1024) {\n      setStatus("Logo must be smaller than 5MB");\n      return;\n    }\n\n    setLogoFile(file);\n    setLogoPreview(URL.createObjectURL(file));\n    setStatus("Logo selected");\n  }\n\n  async function deployToken() {\n    if (busy) return;\n\n    try {\n      setBusy(true);\n      setAddress("");\n      setTxid("");\n\n      if (!window.tronLink) {\n        throw new Error("TronLink is not installed");\n      }\n\n      if (!name.trim() || !symbol.trim() || !supply.trim()) {\n        throw new Error("Complete all token fields first");\n      }\n\n      if (!/^[0-9]+$/.test(supply.trim())) {\n        throw new Error("Supply must contain numbers only");\n      }\n\n      setStatus("Connecting wallet...");\n\n      await window.tronLink.request({\n        method: "tron_requestAccounts",\n      });\n\n      const tronWeb = window.tronWeb;\n\n      if (!tronWeb?.defaultAddress?.base58) {\n        throw new Error("No active TronLink account");\n      }\n\n      setStatus("Loading contract...");\n\n      const response = await fetch("/api/token-artifact", {\n        cache: "no-store",\n      });\n\n      if (!response.ok) {\n        throw new Error("Unable to load contract artifact");\n      }\n\n      const artifact = await response.json();\n\n      if (!artifact.abi || !artifact.bytecode) {\n        throw new Error("ABI or bytecode is missing");\n      }\n\n      if (!logoFile) {\n        throw new Error("Please select a token logo");\n      }\n\n      setStatus("Uploading token logo...");\n\n      const logoData = new FormData();\n      logoData.append("logo", logoFile);\n\n      const logoResponse = await fetch("/api/upload-logo", {\n        method: "POST",\n        body: logoData,\n      });\n\n      if (!logoResponse.ok) {\n        throw new Error("Logo upload failed");\n      }\n\n      const logoResult = await logoResponse.json();\n      console.log("Token logo:", logoResult);\n\n      setStatus("Preparing deployment...");\n\n      const contract = await tronWeb.contract().new({\n        abi: artifact.abi,\n        bytecode: artifact.bytecode,\n        parameters: [\n          name.trim(),\n          symbol.trim(),\n          supply.trim(),\n        ],\n        feeLimit: 500_000_000,\n      });\n\n      const deployedAddress =\n        contract?.address ||\n        contract?._address ||\n        "";\n\n      if (deployedAddress) {\n        setAddress(String(deployedAddress));\n      }\n\n      setStatus("Deployment completed");\n    } catch (error: any) {\n      console.error(error);\n      setStatus(\n        error?.message ||\n          error?.response?.message ||\n          "Deployment failed"\n      );\n    } finally {\n      setBusy(false);\n    }\n  }\n\n  return (\n    <main className="app">\n      <div className="glow glow1" />\n      <div className="glow glow2" />\n\n      <nav className="navbar">\n        <div className="brand">\n          <div className="tron-orb">\n            <span>◆</span>\n          </div>\n\n          <div>\n            <strong>TRON</strong>\n            <small>DEPLOYMENT STUDIO</small>\n          </div>\n        </div>\n\n        <button\n          className="walletButton"\n          onClick={connectWallet}\n        >\n          CONNECT WALLET\n        </button>\n      </nav>\n\n      <section className="hero">\n        <div className="badge">\n          ● TRON NETWORK\n        </div>\n\n        <h1>\n          TRC20\n          <span> TOKEN FACTORY</span>\n        </h1>\n\n        <p>\n          Create and deploy your own TRC20 token\n          directly from your connected TronLink wallet.\n        </p>\n      </section>\n\n      <section className="panel">\n        <div className="panelHeader">\n          <div>\n            <span className="eyebrow">TOKEN CONFIGURATION</span>\n            <h2>Deploy New Asset</h2>\n          </div>\n\n          <div className="network">\n            <i />\n            TRON NETWORK\n          </div>\n        </div>\n\n        <div className="grid">\n          <div className="field">\n            <label>TOKEN NAME</label>\n\n            <input\n              value={name}\n              onChange={(e) => setName(e.target.value)}\n              placeholder="My Token"\n            />\n          </div>\n\n          <div className="field">\n            <label>TOKEN SYMBOL</label>\n\n            <input\n              value={symbol}\n              onChange={(e) =>\n                setSymbol(e.target.value.toUpperCase())\n              }\n              placeholder="MTK"\n            />\n          </div>\n\n          <div className="field full">\n            <label>INITIAL SUPPLY</label>\n\n            <input\n              value={supply}\n              onChange={(e) => setSupply(e.target.value)}\n              placeholder="1000000"\n              inputMode="numeric"\n            />\n\n            <small>\n              18 decimals · Supply is assigned to the\n              deploying wallet\n            </small>\n          </div>\n        </div>\n\n        <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">\n          <label className="mb-3 block text-sm font-semibold">TOKEN LOGO</label>\n          <input\n            type="file"\n            accept="image/png,image/jpeg,image/webp,image/svg+xml"\n            onChange={handleLogoChange}\n            className="block w-full cursor-pointer rounded-lg border border-white/10 p-3 text-sm"\n          />\n          {logoPreview && (\n            <div className="mt-4 flex items-center gap-4">\n              <img\n                src={logoPreview}\n                alt="Token logo preview"\n                className="h-20 w-20 rounded-full object-cover border border-white/20"\n              />\n              <span className="text-sm opacity-80">Logo selected</span>\n            </div>\n          )}\n        </div>\n\n        <button\n          className="deploy"\n          onClick={deployToken}\n          disabled={busy}\n        >\n          {busy ? "DEPLOYING..." : "DEPLOY TRC20 TOKEN"}\n        </button>\n\n        <div className="status">\n          <span className={busy ? "pulse" : ""} />\n          {status}\n        </div>\n\n        {address && (\n          <div className="result">\n            <span>CONTRACT ADDRESS</span>\n            <code>{address}</code>\n          </div>\n        )}\n\n        {txid && (\n          <div className="result">\n            <span>TRANSACTION ID</span>\n            <code>{txid}</code>\n          </div>\n        )}\n      </section>\n\n      <footer>\n        <span>TRC20 FACTORY</span>\n        <span>•</span>\n        <span>TRON ECOSYSTEM</span>\n        <span>•</span>\n        <span>SECURE CLIENT CONNECTION</span>\n      </footer>\n\n      <style jsx>{`\n        * {\n          box-sizing: border-box;\n        }\n\n        .app {\n          position: relative;\n          min-height: 100vh;\n          overflow: hidden;\n          color: #fff;\n          background:\n            radial-gradient(\n              circle at 50% -10%,\n              #321018 0,\n              transparent 38%\n            ),\n            linear-gradient(\n              135deg,\n              #050608,\n              #0a0c11 50%,\n              #030405\n            );\n          padding: 28px;\n          font-family:\n            Inter,\n            ui-sans-serif,\n            system-ui,\n            -apple-system,\n            BlinkMacSystemFont,\n            "Segoe UI",\n            sans-serif;\n        }\n\n        .glow {\n          position: absolute;\n          width: 420px;\n          height: 420px;\n          border-radius: 50%;\n          filter: blur(110px);\n          opacity: .14;\n          pointer-events: none;\n        }\n\n        .glow1 {\n          background: #ff164f;\n          top: 100px;\n          left: -220px;\n        }\n\n        .glow2 {\n          background: #ff174f;\n          right: -250px;\n          bottom: 40px;\n        }\n\n        .navbar {\n          position: relative;\n          z-index: 2;\n          max-width: 1080px;\n          margin: auto;\n          display: flex;\n          align-items: center;\n          justify-content: space-between;\n        }\n\n        .brand {\n          display: flex;\n          align-items: center;\n          gap: 13px;\n        }\n\n        .tron-orb {\n          width: 45px;\n          height: 45px;\n          display: grid;\n          place-items: center;\n          border-radius: 14px;\n          background:\n            linear-gradient(\n              145deg,\n              #ff315b,\n              #b90032\n            );\n          box-shadow:\n            0 0 28px rgba(255, 20, 75, .4);\n          transform: rotate(45deg);\n        }\n\n        .tron-orb span {\n          transform: rotate(-45deg);\n          font-size: 20px;\n        }\n\n        .brand strong {\n          display: block;\n          font-size: 18px;\n          letter-spacing: 3px;\n        }\n\n        .brand small {\n          display: block;\n          margin-top: 3px;\n          color: #777b86;\n          font-size: 8px;\n          letter-spacing: 2px;\n        }\n\n        .walletButton {\n          border: 1px solid rgba(255,255,255,.14);\n          background: rgba(255,255,255,.045);\n          color: white;\n          border-radius: 12px;\n          padding: 13px 18px;\n          font-weight: 800;\n          letter-spacing: 1px;\n          cursor: pointer;\n          transition: .2s;\n        }\n\n        .walletButton:hover {\n          border-color: rgba(255,30,80,.7);\n          background: rgba(255,30,80,.1);\n        }\n\n        .hero {\n          position: relative;\n          z-index: 1;\n          max-width: 850px;\n          margin: 100px auto 45px;\n          text-align: center;\n        }\n\n        .badge {\n          display: inline-block;\n          padding: 8px 13px;\n          border-radius: 999px;\n          border: 1px solid rgba(255,255,255,.1);\n          background: rgba(255,255,255,.04);\n          color: #b8bbc3;\n          font-size: 10px;\n          letter-spacing: 2px;\n        }\n\n        .hero h1 {\n          margin: 20px 0 12px;\n          font-size: clamp(46px, 8vw, 86px);\n          line-height: .95;\n          letter-spacing: -4px;\n          font-weight: 900;\n        }\n\n        .hero h1 span {\n          display: block;\n          color: #ff315b;\n          text-shadow:\n            0 0 35px rgba(255,30,80,.25);\n        }\n\n        .hero p {\n          max-width: 600px;\n          margin: auto;\n          color: #777c88;\n          line-height: 1.7;\n          font-size: 15px;\n        }\n\n        .panel {\n          position: relative;\n          z-index: 2;\n          max-width: 820px;\n          margin: auto;\n          padding: 30px;\n          border-radius: 24px;\n          border: 1px solid rgba(255,255,255,.09);\n          background: rgba(13,15,20,.78);\n          box-shadow:\n            0 30px 100px rgba(0,0,0,.4),\n            inset 0 1px rgba(255,255,255,.04);\n          backdrop-filter: blur(24px);\n        }\n\n        .panelHeader {\n          display: flex;\n          justify-content: space-between;\n          align-items: center;\n          gap: 20px;\n          margin-bottom: 28px;\n        }\n\n        .eyebrow {\n          color: #666b77;\n          font-size: 9px;\n          letter-spacing: 2px;\n        }\n\n        .panel h2 {\n          margin: 6px 0 0;\n          font-size: 25px;\n        }\n\n        .network {\n          padding: 9px 12px;\n          border-radius: 9px;\n          background: rgba(255,255,255,.04);\n          color: #969aa5;\n          font-size: 9px;\n          letter-spacing: 1px;\n        }\n\n        .network i {\n          display: inline-block;\n          width: 6px;\n          height: 6px;\n          margin-right: 7px;\n          border-radius: 50%;\n          background: #24e58a;\n          box-shadow: 0 0 10px #24e58a;\n        }\n\n        .grid {\n          display: grid;\n          grid-template-columns: 1fr 1fr;\n          gap: 20px;\n        }\n\n        .field {\n          display: flex;\n          flex-direction: column;\n          gap: 9px;\n        }\n\n        .field.full {\n          grid-column: 1 / -1;\n        }\n\n        .field label {\n          color: #8b909c;\n          font-size: 9px;\n          letter-spacing: 1.7px;\n          font-weight: 800;\n        }\n\n        .field input {\n          width: 100%;\n          border: 1px solid rgba(255,255,255,.09);\n          background: rgba(0,0,0,.27);\n          color: white;\n          border-radius: 13px;\n          padding: 16px;\n          outline: none;\n          font-size: 15px;\n          transition: .2s;\n        }\n\n        .field input:focus {\n          border-color: rgba(255,35,85,.7);\n          box-shadow:\n            0 0 0 3px rgba(255,35,85,.07);\n        }\n\n        .field input::placeholder {\n          color: #454852;\n        }\n\n        .field small {\n          color: #555a66;\n          font-size: 9px;\n        }\n\n        .deploy {\n          width: 100%;\n          margin-top: 28px;\n          padding: 17px;\n          border: 0;\n          border-radius: 14px;\n          color: white;\n          background:\n            linear-gradient(\n              100deg,\n              #ff174f,\n              #d9003d\n            );\n          font-size: 13px;\n          font-weight: 900;\n          letter-spacing: 1.4px;\n          cursor: pointer;\n          box-shadow:\n            0 15px 35px rgba(255,0,60,.18);\n          transition: .2s;\n        }\n\n        .deploy:hover:not(:disabled) {\n          transform: translateY(-1px);\n          box-shadow:\n            0 18px 45px rgba(255,0,60,.28);\n        }\n\n        .deploy:disabled {\n          opacity: .55;\n          cursor: wait;\n        }\n\n        .status {\n          display: flex;\n          align-items: center;\n          gap: 9px;\n          margin-top: 18px;\n          padding: 13px;\n          border-radius: 11px;\n          background: rgba(255,255,255,.025);\n          color: #747984;\n          font-size: 11px;\n        }\n\n        .status > span {\n          width: 7px;\n          height: 7px;\n          border-radius: 50%;\n          background: #666b75;\n        }\n\n        .status > .pulse {\n          background: #ff315b;\n          box-shadow: 0 0 12px #ff315b;\n        }\n\n        .result {\n          margin-top: 12px;\n          padding: 15px;\n          border-radius: 12px;\n          background: rgba(0,0,0,.25);\n          border: 1px solid rgba(255,255,255,.06);\n        }\n\n        .result span {\n          display: block;\n          margin-bottom: 8px;\n          color: #656a75;\n          font-size: 8px;\n          letter-spacing: 1.5px;\n        }\n\n        .result code {\n          color: #ff5677;\n          font-size: 11px;\n          overflow-wrap: anywhere;\n        }\n\n        footer {\n          position: relative;\n          z-index: 1;\n          max-width: 820px;\n          margin: 28px auto 0;\n          display: flex;\n          justify-content: center;\n          gap: 12px;\n          color: #3f434d;\n          font-size: 8px;\n          letter-spacing: 1.5px;\n        }\n\n        @media (max-width: 650px) {\n          .app {\n            padding: 20px;\n          }\n\n          .hero {\n            margin-top: 70px;\n          }\n\n          .hero h1 {\n            font-size: 52px;\n          }\n\n          .panel {\n            padding: 22px;\n          }\n\n          .grid {\n            grid-template-columns: 1fr;\n          }\n\n          .field.full {\n            grid-column: auto;\n          }\n\n          .panelHeader {\n            align-items: flex-start;\n            flex-direction: column;\n          }\n\n          footer {\n            flex-wrap: wrap;\n          }\n        }\n      `}</style>\n    </main>\n  );\n}\n
+"use client";
+
+import { useState } from "react";
+
+declare global {
+  interface Window {
+    tronLink?: any;
+    tronWeb?: any;
+  }
+}
+
+export default function Home() {
+  const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState("");
+  const [supply, setSupply] = useState("");
+  const [status, setStatus] = useState("Wallet not connected");
+  const [address, setAddress] = useState("");
+  const [txid, setTxid] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function connectWallet() {
+    try {
+      setStatus("Detecting TronLink...");
+
+      for (let i = 0; i < 20; i++) {
+        if ((window as any).tronLink || (window as any).tronWeb) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      const tronLink = (window as any).tronLink;
+      const tronWeb = (window as any).tronWeb;
+
+      if (!tronLink && !tronWeb) {
+        setStatus("Open this page inside TronLink DApp browser");
+        return;
+      }
+
+      if (tronLink?.request) {
+        const result = await tronLink.request({
+          method: "tron_requestAccounts",
+        });
+
+        if (result?.code !== 200 && result?.code !== 0) {
+          throw new Error("Wallet connection was rejected");
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const activeTronWeb = (window as any).tronWeb;
+      const account = activeTronWeb?.defaultAddress?.base58;
+
+      if (!account) {
+        throw new Error("TronLink opened, but no active wallet account was found");
+      }
+
+      setAddress(account);
+      setStatus(`Connected: ${account.slice(0, 7)}...${account.slice(-5)}`);
+    } catch (error: any) {
+      console.error(error);
+      setStatus(error?.message || "Connection failed");
+    }
+  }
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setStatus("Please select an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setStatus("Logo must be smaller than 5MB");
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+    setStatus("Logo selected");
+  }
+
+  async function deployToken() {
+    if (busy) return;
+
+    try {
+      setBusy(true);
+      setAddress("");
+      setTxid("");
+
+      if (!window.tronLink) {
+        throw new Error("TronLink is not installed");
+      }
+
+      if (!name.trim() || !symbol.trim() || !supply.trim()) {
+        throw new Error("Complete all token fields first");
+      }
+
+      if (!/^[0-9]+$/.test(supply.trim())) {
+        throw new Error("Supply must contain numbers only");
+      }
+
+      setStatus("Connecting wallet...");
+
+      await window.tronLink.request({
+        method: "tron_requestAccounts",
+      });
+
+      const tronWeb = window.tronWeb;
+
+      if (!tronWeb?.defaultAddress?.base58) {
+        throw new Error("No active TronLink account");
+      }
+
+      setStatus("Loading contract...");
+
+      const response = await fetch("/api/token-artifact", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to load contract artifact");
+      }
+
+      const artifact = await response.json();
+
+      if (!artifact.abi || !artifact.bytecode) {
+        throw new Error("ABI or bytecode is missing");
+      }
+
+      if (!logoFile) {
+        throw new Error("Please select a token logo");
+      }
+
+      setStatus("Uploading token logo...");
+
+      const logoData = new FormData();
+      logoData.append("logo", logoFile);
+
+      const logoResponse = await fetch("/api/upload-logo", {
+        method: "POST",
+        body: logoData,
+      });
+
+      if (!logoResponse.ok) {
+        throw new Error("Logo upload failed");
+      }
+
+      const logoResult = await logoResponse.json();
+      console.log("Token logo:", logoResult);
+
+      setStatus("Preparing deployment...");
+
+      const contract = await tronWeb.contract().new({
+        abi: artifact.abi,
+        bytecode: artifact.bytecode,
+        parameters: [
+          name.trim(),
+          symbol.trim(),
+          supply.trim(),
+        ],
+        feeLimit: 500_000_000,
+      });
+
+      const deployedAddress =
+        contract?.address ||
+        contract?._address ||
+        "";
+
+      if (deployedAddress) {
+        setAddress(String(deployedAddress));
+      }
+
+      setStatus("Deployment completed");
+    } catch (error: any) {
+      console.error(error);
+      setStatus(
+        error?.message ||
+          error?.response?.message ||
+          "Deployment failed"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="app">
+      <div className="glow glow1" />
+      <div className="glow glow2" />
+
+      <nav className="navbar">
+        <div className="brand">
+          <div className="tron-orb">
+            <span>◆</span>
+          </div>
+
+          <div>
+            <strong>TRON</strong>
+            <small>DEPLOYMENT STUDIO</small>
+          </div>
+        </div>
+
+        <button
+          className="walletButton"
+          onClick={connectWallet}
+        >
+          CONNECT WALLET
+        </button>
+      </nav>
+
+      <section className="hero">
+        <div className="badge">
+          ● TRON NETWORK
+        </div>
+
+        <h1>
+          TRC20
+          <span> TOKEN FACTORY</span>
+        </h1>
+
+        <p>
+          Create and deploy your own TRC20 token
+          directly from your connected TronLink wallet.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panelHeader">
+          <div>
+            <span className="eyebrow">TOKEN CONFIGURATION</span>
+            <h2>Deploy New Asset</h2>
+          </div>
+
+          <div className="network">
+            <i />
+            TRON NETWORK
+          </div>
+        </div>
+
+        <div className="grid">
+          <div className="field">
+            <label>TOKEN NAME</label>
+
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Token"
+            />
+          </div>
+
+          <div className="field">
+            <label>TOKEN SYMBOL</label>
+
+            <input
+              value={symbol}
+              onChange={(e) =>
+                setSymbol(e.target.value.toUpperCase())
+              }
+              placeholder="MTK"
+            />
+          </div>
+
+          <div className="field full">
+            <label>INITIAL SUPPLY</label>
+
+            <input
+              value={supply}
+              onChange={(e) => setSupply(e.target.value)}
+              placeholder="1000000"
+              inputMode="numeric"
+            />
+
+            <small>
+              18 decimals · Supply is assigned to the
+              deploying wallet
+            </small>
+          </div>
+        </div>
+
+        <div className="field full">
+          <label>TOKEN LOGO</label>
+
+          <div className="logo-picker">
+            <input
+              id="token-logo"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              onChange={handleLogoChange}
+              disabled={busy}
+            />
+
+            <label htmlFor="token-logo" className="logo-picker-button">
+              {logoPreview ? "CHANGE LOGO" : "SELECT TOKEN LOGO"}
+            </label>
+
+            {logoPreview && (
+              <div className="logo-preview">
+                <img src={logoPreview} alt="Token logo preview" />
+                <div>
+                  <strong>LOGO READY</strong>
+                  <small>{logoFile?.name}</small>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <small>
+            PNG, JPG, WEBP or SVG · Maximum 5MB
+          </small>
+        </div>
+
+        <button
+          className="deploy"
+          onClick={deployToken}
+          disabled={busy}
+        >
+          {busy ? "DEPLOYING..." : "DEPLOY TRC20 TOKEN"}
+        </button>
+
+        <div className="status">
+          <span className={busy ? "pulse" : ""} />
+          {status}
+        </div>
+
+        {address && (
+          <div className="result">
+            <span>CONTRACT ADDRESS</span>
+            <code>{address}</code>
+          </div>
+        )}
+
+        {txid && (
+          <div className="result">
+            <span>TRANSACTION ID</span>
+            <code>{txid}</code>
+          </div>
+        )}
+      </section>
+
+      <footer>
+        <span>TRC20 FACTORY</span>
+        <span>•</span>
+        <span>TRON ECOSYSTEM</span>
+        <span>•</span>
+        <span>SECURE CLIENT CONNECTION</span>
+      </footer>
+
+      <style jsx>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        .app {
+          position: relative;
+          min-height: 100vh;
+          overflow: hidden;
+          color: #fff;
+          background:
+            radial-gradient(
+              circle at 50% -10%,
+              #321018 0,
+              transparent 38%
+            ),
+            linear-gradient(
+              135deg,
+              #050608,
+              #0a0c11 50%,
+              #030405
+            );
+          padding: 28px;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .glow {
+          position: absolute;
+          width: 420px;
+          height: 420px;
+          border-radius: 50%;
+          filter: blur(110px);
+          opacity: .14;
+          pointer-events: none;
+        }
+
+        .glow1 {
+          background: #ff164f;
+          top: 100px;
+          left: -220px;
+        }
+
+        .glow2 {
+          background: #ff174f;
+          right: -250px;
+          bottom: 40px;
+        }
+
+        .navbar {
+          position: relative;
+          z-index: 2;
+          max-width: 1080px;
+          margin: auto;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+        }
+
+        .tron-orb {
+          width: 45px;
+          height: 45px;
+          display: grid;
+          place-items: center;
+          border-radius: 14px;
+          background:
+            linear-gradient(
+              145deg,
+              #ff315b,
+              #b90032
+            );
+          box-shadow:
+            0 0 28px rgba(255, 20, 75, .4);
+          transform: rotate(45deg);
+        }
+
+        .tron-orb span {
+          transform: rotate(-45deg);
+          font-size: 20px;
+        }
+
+        .brand strong {
+          display: block;
+          font-size: 18px;
+          letter-spacing: 3px;
+        }
+
+        .brand small {
+          display: block;
+          margin-top: 3px;
+          color: #777b86;
+          font-size: 8px;
+          letter-spacing: 2px;
+        }
+
+        .walletButton {
+          border: 1px solid rgba(255,255,255,.14);
+          background: rgba(255,255,255,.045);
+          color: white;
+          border-radius: 12px;
+          padding: 13px 18px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          cursor: pointer;
+          transition: .2s;
+        }
+
+        .walletButton:hover {
+          border-color: rgba(255,30,80,.7);
+          background: rgba(255,30,80,.1);
+        }
+
+        .hero {
+          position: relative;
+          z-index: 1;
+          max-width: 850px;
+          margin: 100px auto 45px;
+          text-align: center;
+        }
+
+        .badge {
+          display: inline-block;
+          padding: 8px 13px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.1);
+          background: rgba(255,255,255,.04);
+          color: #b8bbc3;
+          font-size: 10px;
+          letter-spacing: 2px;
+        }
+
+        .hero h1 {
+          margin: 20px 0 12px;
+          font-size: clamp(46px, 8vw, 86px);
+          line-height: .95;
+          letter-spacing: -4px;
+          font-weight: 900;
+        }
+
+        .hero h1 span {
+          display: block;
+          color: #ff315b;
+          text-shadow:
+            0 0 35px rgba(255,30,80,.25);
+        }
+
+        .hero p {
+          max-width: 600px;
+          margin: auto;
+          color: #777c88;
+          line-height: 1.7;
+          font-size: 15px;
+        }
+
+        .panel {
+          position: relative;
+          z-index: 2;
+          max-width: 820px;
+          margin: auto;
+          padding: 30px;
+          border-radius: 24px;
+          border: 1px solid rgba(255,255,255,.09);
+          background: rgba(13,15,20,.78);
+          box-shadow:
+            0 30px 100px rgba(0,0,0,.4),
+            inset 0 1px rgba(255,255,255,.04);
+          backdrop-filter: blur(24px);
+        }
+
+        .panelHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 20px;
+          margin-bottom: 28px;
+        }
+
+        .eyebrow {
+          color: #666b77;
+          font-size: 9px;
+          letter-spacing: 2px;
+        }
+
+        .panel h2 {
+          margin: 6px 0 0;
+          font-size: 25px;
+        }
+
+        .network {
+          padding: 9px 12px;
+          border-radius: 9px;
+          background: rgba(255,255,255,.04);
+          color: #969aa5;
+          font-size: 9px;
+          letter-spacing: 1px;
+        }
+
+        .network i {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          margin-right: 7px;
+          border-radius: 50%;
+          background: #24e58a;
+          box-shadow: 0 0 10px #24e58a;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+
+        .field.full {
+          grid-column: 1 / -1;
+        }
+
+        .field label {
+          color: #8b909c;
+          font-size: 9px;
+          letter-spacing: 1.7px;
+          font-weight: 800;
+        }
+
+        .field input {
+          width: 100%;
+          border: 1px solid rgba(255,255,255,.09);
+          background: rgba(0,0,0,.27);
+          color: white;
+          border-radius: 13px;
+          padding: 16px;
+          outline: none;
+          font-size: 15px;
+          transition: .2s;
+        }
+
+        .field input:focus {
+          border-color: rgba(255,35,85,.7);
+          box-shadow:
+            0 0 0 3px rgba(255,35,85,.07);
+        }
+
+        .field input::placeholder {
+          color: #454852;
+        }
+
+        .field small {
+          color: #555a66;
+          font-size: 9px;
+        }
+
+        .deploy {
+          width: 100%;
+          margin-top: 28px;
+          padding: 17px;
+          border: 0;
+          border-radius: 14px;
+          color: white;
+          background:
+            linear-gradient(
+              100deg,
+              #ff174f,
+              #d9003d
+            );
+          font-size: 13px;
+          font-weight: 900;
+          letter-spacing: 1.4px;
+          cursor: pointer;
+          box-shadow:
+            0 15px 35px rgba(255,0,60,.18);
+          transition: .2s;
+        }
+
+        .deploy:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow:
+            0 18px 45px rgba(255,0,60,.28);
+        }
+
+        .deploy:disabled {
+          opacity: .55;
+          cursor: wait;
+        }
+
+        .status {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          margin-top: 18px;
+          padding: 13px;
+          border-radius: 11px;
+          background: rgba(255,255,255,.025);
+          color: #747984;
+          font-size: 11px;
+        }
+
+        .status > span {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #666b75;
+        }
+
+        .status > .pulse {
+          background: #ff315b;
+          box-shadow: 0 0 12px #ff315b;
+        }
+
+        .result {
+          margin-top: 12px;
+          padding: 15px;
+          border-radius: 12px;
+          background: rgba(0,0,0,.25);
+          border: 1px solid rgba(255,255,255,.06);
+        }
+
+        .result span {
+          display: block;
+          margin-bottom: 8px;
+          color: #656a75;
+          font-size: 8px;
+          letter-spacing: 1.5px;
+        }
+
+        .result code {
+          color: #ff5677;
+          font-size: 11px;
+          overflow-wrap: anywhere;
+        }
+
+        footer {
+          position: relative;
+          z-index: 1;
+          max-width: 820px;
+          margin: 28px auto 0;
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          color: #3f434d;
+          font-size: 8px;
+          letter-spacing: 1.5px;
+        }
+
+        @media (max-width: 650px) {
+          .app {
+            padding: 20px;
+          }
+
+          .hero {
+            margin-top: 70px;
+          }
+
+          .hero h1 {
+            font-size: 52px;
+          }
+
+          .panel {
+            padding: 22px;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .field.full {
+            grid-column: auto;
+          }
+
+          .panelHeader {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          footer {
+            flex-wrap: wrap;
+          }
+        }
+      `}</style>
+    </main>
+  );
+}
