@@ -3,11 +3,20 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const file = formData.get("file");
 
-    if (!(file instanceof File)) {
+    // Accept both field names for compatibility.
+    const file = formData.get("file") ?? formData.get("logo");
+
+    if (
+      !file ||
+      typeof (file as any).arrayBuffer !== "function" ||
+      typeof (file as any).name !== "string"
+    ) {
       return NextResponse.json(
-        { error: "فایلی دریافت نشد." },
+        {
+          error: "فایل لوگو دریافت نشد.",
+          hint: "نام فیلد باید file یا logo باشد.",
+        },
         { status: 400 }
       );
     }
@@ -16,13 +25,22 @@ export async function POST(request: Request) {
 
     if (!jwt) {
       return NextResponse.json(
-        { error: "PINATA_JWT در .env.local تنظیم نشده است." },
+        {
+          error: "PINATA_JWT تنظیم نشده است.",
+        },
         { status: 500 }
       );
     }
 
+    const filename = (file as any).name || "token-logo.png";
+
     const pinataForm = new FormData();
-    pinataForm.append("file", file, file.name);
+
+    pinataForm.append(
+      "file",
+      file as any,
+      filename
+    );
 
     const response = await fetch(
       "https://api.pinata.cloud/pinning/pinFileToIPFS",
@@ -35,30 +53,49 @@ export async function POST(request: Request) {
       }
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
+      console.error("Pinata error:", data);
+
       return NextResponse.json(
         {
-          error: "Pinata upload failed",
+          error: "آپلود لوگو در IPFS ناموفق بود.",
           details: data,
         },
-        { status: response.status }
+        { status: response.status || 500 }
       );
     }
 
-    const ipfsHash = data.IpfsHash;
+    const ipfsHash = data?.IpfsHash;
+
+    if (!ipfsHash) {
+      return NextResponse.json(
+        {
+          error: "Pinata پاسخ معتبر برای CID برنگرداند.",
+          details: data,
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       ipfsHash,
+      cid: ipfsHash,
       gatewayUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+      ipfsUrl: `ipfs://${ipfsHash}`,
+      filename,
     });
-  } catch (error) {
-    console.error("Upload error:", error);
+  } catch (error: any) {
+    console.error("Logo upload error:", error);
 
     return NextResponse.json(
-      { error: "خطا هنگام آپلود لوگو." },
+      {
+        error:
+          error?.message ||
+          "خطا هنگام آپلود لوگو.",
+      },
       { status: 500 }
     );
   }
