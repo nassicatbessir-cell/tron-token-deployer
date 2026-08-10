@@ -53,8 +53,7 @@ export default function Home() {
         parameters: [
           "MyToken",
           "MTK",
-          18,
-          tronWeb.toSun(1000000),
+          1000000,
         ],
       });
 
