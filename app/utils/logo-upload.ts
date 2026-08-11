@@ -32,7 +32,6 @@ export async function uploadLogoWithRetry(
       }
 
       if (attempt < retries) {
-        // Wait before retry with exponential backoff
         await new Promise((resolve) =>
           setTimeout(resolve, RETRY_DELAY_MS * Math.pow(1.5, attempt - 1))
         );
@@ -49,7 +48,6 @@ export async function uploadLogoWithRetry(
         };
       }
 
-      // Wait before retry
       await new Promise((resolve) =>
         setTimeout(resolve, RETRY_DELAY_MS * Math.pow(1.5, attempt - 1))
       );
@@ -67,7 +65,6 @@ export async function uploadLogoWithRetry(
  */
 async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
   try {
-    // Validate file
     if (!file || !file.type.startsWith("image/")) {
       return {
         success: false,
@@ -75,7 +72,10 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       };
     }
 
-    const maxSizeMB = parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || "5");
+    const maxSizeMB = parseInt(
+      process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || "5",
+      10
+    );
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
 
     if (file.size > maxSizeBytes) {
@@ -89,10 +89,7 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
     formData.append("file", file);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      UPLOAD_TIMEOUT_MS
-    );
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
     const response = await fetch("/api/upload-logo", {
       method: "POST",

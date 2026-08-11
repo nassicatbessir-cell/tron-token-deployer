@@ -28,6 +28,10 @@ contract TRC20Token {
         string memory tokenSymbol,
         uint256 initialSupply
     ) {
+        require(bytes(tokenName).length > 0, "Token name is required");
+        require(bytes(tokenSymbol).length > 0, "Token symbol is required");
+        require(initialSupply > 0, "Initial supply must be greater than zero");
+
         _name = tokenName;
         _symbol = tokenSymbol;
 
@@ -67,10 +71,8 @@ contract TRC20Token {
         address to,
         uint256 amount
     ) external returns (bool) {
-        require(
-            _balances[msg.sender] >= amount,
-            "Insufficient balance"
-        );
+        require(to != address(0), "Invalid recipient");
+        require(_balances[msg.sender] >= amount, "Insufficient balance");
 
         _balances[msg.sender] -= amount;
         _balances[to] += amount;
@@ -91,13 +93,11 @@ contract TRC20Token {
         address spender,
         uint256 amount
     ) external returns (bool) {
+        require(spender != address(0), "Invalid spender");
+
         _allowances[msg.sender][spender] = amount;
 
-        emit Approval(
-            msg.sender,
-            spender,
-            amount
-        );
+        emit Approval(msg.sender, spender, amount);
 
         return true;
     }
@@ -107,11 +107,9 @@ contract TRC20Token {
         address to,
         uint256 amount
     ) external returns (bool) {
-        require(
-            _balances[from] >= amount,
-            "Insufficient balance"
-        );
-
+        require(from != address(0), "Invalid sender");
+        require(to != address(0), "Invalid recipient");
+        require(_balances[from] >= amount, "Insufficient balance");
         require(
             _allowances[from][msg.sender] >= amount,
             "Allowance exceeded"
