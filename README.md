@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TRON Launchpad
 
-## Getting Started
+A production-focused TRC20 token deployer built with Next.js, TronLink, Solidity, and IPFS.
 
-First, run the development server:
+## What it does
+
+- connects to TronLink and detects the active TRON network
+- compiles the contract artifact directly from `contracts/TRC20Token.sol`
+- deploys a TRC20 token from the browser through TronLink confirmation
+- uploads token logos to IPFS through Pinata
+- optionally submits token metadata to the configured Meta API
+
+## Project structure
+
+- `app/page.tsx` — launchpad UI and deployment flow
+- `app/api/token-artifact/route.ts` — compiles Solidity source into ABI + bytecode
+- `app/api/upload-logo/route.ts` — validates and uploads token logos to IPFS
+- `app/api/submit-token-meta/route.ts` — forwards token metadata to an external registry
+- `contracts/TRC20Token.sol` — token contract source
+- `app/utils/` — network and upload helpers
+
+## Environment variables
+
+Copy `.env.example` to `.env.local` and fill in the values you need.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required for logo uploads:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `PINATA_JWT`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Optional for metadata submission:
 
-## Learn More
+- `META_API_URL`
+- `META_API_KEY`
 
-To learn more about Next.js, take a look at the following resources:
+Optional app configuration:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `TRON_RPC_URL`
+- `NEXT_PUBLIC_APP_ENV`
+- `NEXT_PUBLIC_SUPPORTED_NETWORKS`
+- `NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Local development
 
-## Deploy on Vercel
+```bash
+npm install
+npm run dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Then open [http://localhost:3000](http://localhost:3000).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deployment flow
+
+1. connect TronLink
+2. enter token name, symbol, and initial supply
+3. optionally upload a logo
+4. deploy the token from the active TRON wallet
+5. review the contract address and explorer link
+
+## Notes
+
+- the deploy flow uses the contract source in `contracts/TRC20Token.sol`, not a manually pasted bytecode blob
+- logo uploads are validated for image type and file size before reaching Pinata
+- if the metadata API is not configured, token deployment still succeeds and the UI reports that metadata submission was skipped
