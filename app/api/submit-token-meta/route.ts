@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isValidTronAddress, TronNetwork } from "@/app/utils/tron-network";
 
 interface TokenMetadata {
   contractAddress: string;
@@ -22,11 +23,15 @@ interface MetaResponse {
   status?: "pending" | "approved" | "rejected";
 }
 
+const META_REQUEST_TIMEOUT_MS = 15_000;
+
 async function submitToMetaBridge(
   metadata: TokenMetadata,
   apiKey: string
 ): Promise<MetaResponse> {
   const metaApiUrl = process.env.META_API_URL || "https://api.meta.global/v1";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), META_REQUEST_TIMEOUT_MS);
 
   try {
     const payload = {
@@ -36,7 +41,7 @@ async function submitToMetaBridge(
         symbol: metadata.symbol,
         decimals: metadata.decimals,
         totalSupply: metadata.totalSupply,
-        chainId: metadata.chain === "TRON_MAINNET" ? "0x39" : "0x00a0",
+        chainId: metadata.chain === TronNetwork.MAINNET ? "0x39" : "0x00a0",
         logoUrl: metadata.logoUrl,
         logoCid: metadata.logoCid,
         deployer: metadata.deployerAddress,
@@ -54,9 +59,10 @@ async function submitToMetaBridge(
         "User-Agent": "tron-token-deployer/1.0",
       },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
       console.error("Meta API error:", data);
@@ -77,9 +83,31 @@ async function submitToMetaBridge(
     console.error("Meta submission error:", error);
     return {
       success: false,
-      message: error?.message || "Error submitting to Meta API",
+      message:
+        error?.name === "AbortError"
+          ? "Meta API request timed out"
+          : error?.message || "Error submitting to Meta API",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
+}
+
+function isValidUrl(value: string) {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "ipfs:";
+  } catch {
+    return false;
+  }
+}
+
+function isValidTokenSymbol(value: string) {
+  return /^[A-Z0-9]{2,10}$/.test(value);
 }
 
 export async function POST(request: Request) {
@@ -100,14 +128,7 @@ export async function POST(request: Request) {
       deploymentTxHash,
     } = body;
 
-    // Validation
-    if (
-      !contractAddress ||
-      !name ||
-      !symbol ||
-      !deployerAddress ||
-      !chain
-    ) {
+    if (!contractAddress || !name || !symbol || !deployerAddress || !chain) {
       return NextResponse.json(
         {
           success: false,
@@ -118,11 +139,75 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!["TRON_MAINNET", "TRON_NILE"].includes(chain)) {
+    if (![TronNetwork.MAINNET, TronNetwork.NILE_TESTNET].includes(chain)) {
       return NextResponse.json(
         {
           success: false,
           message: "Invalid chain. Must be TRON_MAINNET or TRON_NILE",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidTronAddress(contractAddress) || !isValidTronAddress(deployerAddress)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid TRON address provided",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (typeof name !== "string" || name.trim().length === 0 || name.trim().length > 64) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Token name must be between 1 and 64 characters",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (typeof symbol !== "string" || !isValidTokenSymbol(symbol.trim().toUpperCase())) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Token symbol must be 2-10 uppercase letters or numbers",
+        },
+        { status: 400 }
+      );
+    }
+
+    const normalizedDecimals = Number(decimals ?? 18);
+
+    if (!Number.isInteger(normalizedDecimals) || normalizedDecimals < 0 || normalizedDecimals > 18) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Decimals must be an integer between 0 and 18",
+        },
+        { status: 400 }
+      );
+    }
+
+    const normalizedSupply = String(totalSupply ?? "0").trim();
+
+    if (!/^\d+$/.test(normalizedSupply) || BigInt(normalizedSupply) <= 0n) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Total supply must be a positive whole number",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidUrl(String(logoUrl || ""))) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Logo URL must use https or ipfs",
         },
         { status: 400 }
       );
@@ -142,13 +227,13 @@ export async function POST(request: Request) {
 
     const metadata: TokenMetadata = {
       contractAddress,
-      name,
-      symbol,
-      decimals: decimals || 18,
-      totalSupply: totalSupply || "0",
-      logoIpfsHash: logoIpfsHash || "",
-      logoCid: logoCid || logoIpfsHash || "",
-      logoUrl: logoUrl || "",
+      name: name.trim(),
+      symbol: symbol.trim().toUpperCase(),
+      decimals: normalizedDecimals,
+      totalSupply: normalizedSupply,
+      logoIpfsHash: String(logoIpfsHash || ""),
+      logoCid: String(logoCid || logoIpfsHash || ""),
+      logoUrl: String(logoUrl || ""),
       chain,
       deployerAddress,
       deploymentTxHash,
