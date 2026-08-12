@@ -4,11 +4,11 @@ A production-focused TRC20 token deployer built with Next.js, TronLink, Solidity
 
 ## What it does
 
-- connects to TronLink and detects the active TRON network
+- connects to TronLink and detects the active TRON network without guessing a fallback chain
 - compiles the contract artifact directly from `contracts/TRC20Token.sol`
-- deploys a TRC20 token from the browser through TronLink confirmation
-- uploads token logos to IPFS through Pinata
-- optionally submits token metadata to the configured Meta API
+- validates token inputs before deployment and blocks duplicate in-flight deploy attempts
+- uploads token logos to IPFS through Pinata with server-side JWT usage only
+- optionally submits token metadata to the configured Meta API after deployment
 
 ## Project structure
 
@@ -42,6 +42,8 @@ Optional app configuration:
 - `NEXT_PUBLIC_APP_ENV`
 - `NEXT_PUBLIC_SUPPORTED_NETWORKS`
 - `NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB`
+- `MAX_UPLOAD_SIZE_MB`
+- `UPLOAD_TIMEOUT_MS`
 
 ## Local development
 
@@ -55,13 +57,17 @@ Then open [http://localhost:3000](http://localhost:3000).
 ## Deployment flow
 
 1. connect TronLink
-2. enter token name, symbol, and initial supply
-3. optionally upload a logo
-4. deploy the token from the active TRON wallet
-5. review the contract address and explorer link
+2. detect the active TRON network
+3. validate wallet, token data, and recommended TRX balance
+4. optionally upload a logo to IPFS
+5. create the metadata payload
+6. fetch the contract artifact from source
+7. request TronLink confirmation
+8. review the contract address, transaction ID, metadata result, and explorer links
 
 ## Notes
 
 - the deploy flow uses the contract source in `contracts/TRC20Token.sol`, not a manually pasted bytecode blob
-- logo uploads are validated for image type and file size before reaching Pinata
-- if the metadata API is not configured, token deployment still succeeds and the UI reports that metadata submission was skipped
+- logo uploads reject unsupported MIME types, oversized files, and cross-origin requests
+- metadata submission is explicit; deployment success and metadata submission success are reported separately
+- `npm run build`, live Browser testing, and live TronLink deployment still need to be verified in a runtime with TronLink and valid server environment variables

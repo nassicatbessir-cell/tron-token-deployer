@@ -1,21 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  generateFallbackLogoMetadata,
-  uploadLogoWithRetry,
-} from "@/app/utils/logo-upload";
+import { uploadLogoWithRetry } from "@/app/utils/logo-upload";
 import {
   detectTronNetwork,
+  formatSunAsTrx,
   getContractExplorerUrl,
   getTransactionExplorerUrl,
+  getWalletBalanceSun,
+  isSupportedNetwork,
   isValidTronAddress,
   TRON_NETWORK_CONFIG,
   TronNetwork,
 } from "@/app/utils/tron-network";
 
 type DeployResult = {
-  ipfsHash?: string;
+  cid?: string;
   gatewayUrl?: string;
   contractAddress?: string;
   address?: string;
@@ -23,6 +23,7 @@ type DeployResult = {
   txId?: string;
   txExplorerUrl?: string;
   metadataMessage?: string;
+  totalSupplyBaseUnits?: string;
 };
 
 type ValidationResult = {
@@ -35,21 +36,31 @@ type ValidationResult = {
   twitter: string;
 };
 
+type ArtifactResponse = {
+  abi?: unknown;
+  bytecode?: string;
+  constructorAbi?: {
+    type?: string;
+    inputs?: Array<{ type?: string }>;
+  };
+  error?: string;
+};
+
 const FEATURE_CARDS = [
   {
-    title: "Source-synced artifact",
+    title: "Network-safe deploy flow",
     description:
-      "The deploy endpoint compiles the on-chain artifact from the current Solidity source instead of serving stale bytecode.",
+      "Deployment now stops on unknown or unsupported TRON networks instead of guessing a chain.",
   },
   {
-    title: "Wallet-aware flow",
+    title: "Strict IPFS upload validation",
     description:
-      "The UI detects TronLink, shows the active network, and keeps the deployment flow aligned with the connected wallet.",
+      "Logo uploads sanitize Unicode filenames, validate MIME and size, and stop the flow on upload failure.",
   },
   {
-    title: "Safer logo pipeline",
+    title: "Explicit deployment states",
     description:
-      "Logo uploads are validated, filename-safe, and capped before they reach Pinata or the deployment result screen.",
+      "Wallet, artifact, metadata, transaction, and explorer outcomes are surfaced without silent fallbacks.",
   },
 ];
 
@@ -66,6 +77,22 @@ const MAX_LOGO_SIZE_MB =
   Number.isFinite(configuredMaxLogoSizeMb) && configuredMaxLogoSizeMb > 0
     ? configuredMaxLogoSizeMb
     : DEFAULT_MAX_LOGO_SIZE_MB;
+const SUPPORTED_NETWORKS = new Set(
+  (process.env.NEXT_PUBLIC_SUPPORTED_NETWORKS || "mainnet,nile")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .flatMap((value) => {
+      if (value === "mainnet") {
+        return [TronNetwork.MAINNET];
+      }
+
+      if (value === "nile") {
+        return [TronNetwork.NILE_TESTNET];
+      }
+
+      return [];
+    })
+);
 
 function validateOptionalHttpsUrl(value: string, label: string) {
   const normalizedValue = value.trim();
@@ -103,6 +130,42 @@ function normalizeContractAddress(tronWeb: any, value: string | undefined) {
   } catch {
     return value;
   }
+}
+
+function expandTokenAmountToBaseUnits(amount: string, decimals: bigint) {
+  return (BigInt(amount) * 10n ** decimals).toString();
+}
+
+function isExpectedConstructor(artifact: ArtifactResponse) {
+  const inputTypes = Array.isArray(artifact.constructorAbi?.inputs)
+    ? artifact.constructorAbi.inputs.map((input) => input?.type)
+    : [];
+
+  return (
+    inputTypes.length === 3 &&
+    inputTypes[0] === "string" &&
+    inputTypes[1] === "string" &&
+    inputTypes[2] === "uint256"
+  );
+}
+
+function mapDeployError(error: any) {
+  const message =
+    typeof error?.message === "string"
+      ? error.message
+      : typeof error?.response?.message === "string"
+        ? error.response.message
+        : "Deployment failed.";
+
+  if (/rejected|denied|cancel/i.test(message)) {
+    return "TronLink rejected the transaction request.";
+  }
+
+  if (/Failed to fetch/i.test(message)) {
+    return "Artifact or metadata request failed before the server responded.";
+  }
+
+  return message;
 }
 
 export default function Home() {
@@ -178,7 +241,7 @@ export default function Home() {
       setIsConnecting(true);
       const tronLink = window.tronLink;
 
-      if (!tronLink) {
+      if (!tronLink?.request) {
         throw new Error("TronLink was not detected. Open this page inside TronLink.");
       }
 
@@ -194,13 +257,19 @@ export default function Home() {
 
       const connectedAddress = tronWeb.defaultAddress.base58;
 
-      if (!isValidTronAddress(connectedAddress)) {
+      if (!isValidTronAddress(connectedAddress, tronWeb)) {
         throw new Error("TronLink returned an invalid wallet address.");
       }
 
+      const detectedNetwork = await detectTronNetwork();
+
       setWallet(connectedAddress);
-      setNetwork(await detectTronNetwork());
-      setStatus("Wallet connected successfully.");
+      setNetwork(detectedNetwork);
+      setStatus(
+        detectedNetwork
+          ? `Wallet connected on ${TRON_NETWORK_CONFIG[detectedNetwork].displayName}.`
+          : "Wallet connected, but the TRON network could not be detected."
+      );
       return true;
     } catch (error: any) {
       setStatus(error?.message || "Wallet connection failed.");
@@ -288,7 +357,45 @@ export default function Home() {
     };
   };
 
+  const validationMessage = useMemo(() => {
+    try {
+      validateForm();
+      return "";
+    } catch (error: any) {
+      return error?.message || "Token data is invalid.";
+    }
+  }, [tokenName, symbol, supply, description, website, telegram, twitter, logoFile]);
+
+  const deployDisabledReason = useMemo(() => {
+    if (isDeploying) {
+      return "Deployment is already running.";
+    }
+
+    if (!wallet) {
+      return "Connect TronLink before deploying.";
+    }
+
+    if (!network) {
+      return "Open the dApp on a detected TRON network before deploying.";
+    }
+
+    if (!isSupportedNetwork(network, SUPPORTED_NETWORKS)) {
+      return "The connected TRON network is not supported for deployment.";
+    }
+
+    if (validationMessage) {
+      return validationMessage;
+    }
+
+    return "";
+  }, [isDeploying, wallet, network, validationMessage]);
+
   const handleDeploy = async () => {
+    if (deployDisabledReason) {
+      setStatus(deployDisabledReason);
+      return;
+    }
+
     try {
       setIsDeploying(true);
       setResult(null);
@@ -309,12 +416,13 @@ export default function Home() {
         }
       }
 
-      const activeWallet = window.tronWeb.defaultAddress.base58;
+      const activeWallet = window.tronWeb?.defaultAddress?.base58 || "";
 
-      if (!isValidTronAddress(activeWallet)) {
+      if (!isValidTronAddress(activeWallet, window.tronWeb)) {
         throw new Error("Connected wallet address is invalid.");
       }
 
+      setStatus("Detecting active TRON network...");
       const activeNetwork = await detectTronNetwork();
 
       if (!activeNetwork) {
@@ -323,44 +431,89 @@ export default function Home() {
         );
       }
 
+      if (!isSupportedNetwork(activeNetwork, SUPPORTED_NETWORKS)) {
+        throw new Error("Deployment is disabled on the connected TRON network.");
+      }
+
       setNetwork(activeNetwork);
 
-      let logoMetadata = generateFallbackLogoMetadata(validated.symbol);
+      setStatus("Checking wallet balance for deployment fees...");
+      const balanceSun = await getWalletBalanceSun(window.tronWeb, activeWallet);
+      const minimumBalance = TRON_NETWORK_CONFIG[activeNetwork].minimumRecommendedBalanceSun;
+
+      if (balanceSun < minimumBalance) {
+        throw new Error(
+          `Wallet balance is too low for a reliable deployment. Keep at least ${formatSunAsTrx(minimumBalance)} TRX available.`
+        );
+      }
+
+      const totalSupplyBaseUnits = expandTokenAmountToBaseUnits(validated.supply, TOKEN_DECIMALS);
+      let logoMetadata = {
+        cid: "",
+        gatewayUrl: "",
+        ipfsUrl: "",
+      };
 
       if (logoFile) {
         setStatus("Uploading logo to IPFS...");
         const uploadResult = await uploadLogoWithRetry(logoFile);
 
-        if (uploadResult.success) {
-          logoMetadata = {
-            ipfsHash: uploadResult.ipfsHash || "",
-            cid: uploadResult.cid || uploadResult.ipfsHash || "",
-            gatewayUrl: uploadResult.gatewayUrl || "",
-            ipfsUrl: uploadResult.ipfsUrl || "",
-            isPlaceholder: false,
-          };
-        } else {
-          setStatus(
-            uploadResult.error
-              ? `${uploadResult.error} Continuing without a hosted logo...`
-              : "Logo upload failed. Continuing without a hosted logo..."
-          );
+        if (!uploadResult.success || !uploadResult.cid || !uploadResult.gatewayUrl) {
+          throw new Error(uploadResult.error || "Logo upload failed.");
         }
+
+        logoMetadata = {
+          cid: uploadResult.cid,
+          gatewayUrl: uploadResult.gatewayUrl,
+          ipfsUrl: uploadResult.ipfsUrl || `ipfs://${uploadResult.cid}`,
+        };
       }
 
-      setStatus("Generating contract artifact from source...");
+      setStatus("Creating token metadata payload...");
+      const metadataPayload = {
+        name: validated.name,
+        symbol: validated.symbol,
+        description: validated.description,
+        decimals: Number(TOKEN_DECIMALS),
+        totalSupply: validated.supply,
+        totalSupplyBaseUnits,
+        logoIpfsHash: logoMetadata.cid,
+        logoCid: logoMetadata.cid,
+        logoUrl: logoMetadata.gatewayUrl,
+        website: validated.website,
+        telegram: validated.telegram,
+        twitter: validated.twitter,
+        chain: activeNetwork,
+        deployerAddress: activeWallet,
+      };
 
+      setStatus("Fetching contract artifact...");
       const artifactRes = await fetch("/api/token-artifact", {
         cache: "no-store",
       });
-      const artifact = await artifactRes.json().catch(() => null);
+      const artifact = (await artifactRes.json().catch(() => null)) as ArtifactResponse | null;
 
       if (!artifactRes.ok) {
-        throw new Error(artifact?.error || "Could not load contract artifact.");
+        throw new Error(artifact?.error || "Artifact request failed.");
       }
 
       if (!artifact?.abi || !artifact?.bytecode) {
-        throw new Error("ABI or bytecode is missing.");
+        throw new Error("ABI or bytecode is missing from the artifact response.");
+      }
+
+      if (!isExpectedConstructor(artifact)) {
+        throw new Error("Artifact constructor validation failed.");
+      }
+
+      const walletBeforeDeploy = window.tronWeb?.defaultAddress?.base58 || "";
+      const networkBeforeDeploy = await detectTronNetwork();
+
+      if (walletBeforeDeploy !== activeWallet) {
+        throw new Error("The connected TronLink wallet changed before deployment confirmation.");
+      }
+
+      if (networkBeforeDeploy !== activeNetwork) {
+        throw new Error("The connected TRON network changed before deployment confirmation.");
       }
 
       const bytecode = artifact.bytecode.startsWith("0x")
@@ -369,7 +522,7 @@ export default function Home() {
 
       setStatus("Waiting for TronLink confirmation...");
 
-      const deployedContract = await tronWeb.contract().new({
+      const deployedContract = await window.tronWeb?.contract?.().new({
         abi: artifact.abi,
         bytecode,
         feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
@@ -378,23 +531,22 @@ export default function Home() {
       });
 
       const rawAddress =
-        deployedContract?.address ||
-        deployedContract?._address ||
-        deployedContract?.options?.address;
-      const address = normalizeContractAddress(tronWeb, rawAddress);
+        (deployedContract as any)?.address ||
+        (deployedContract as any)?._address ||
+        (deployedContract as any)?.options?.address;
+      const address = normalizeContractAddress(window.tronWeb, rawAddress);
       const txId =
-        deployedContract?.transaction?.txID ||
-        deployedContract?.transaction?.txId ||
-        deployedContract?.txID ||
+        (deployedContract as any)?.transaction?.txID ||
+        (deployedContract as any)?.transaction?.txId ||
+        (deployedContract as any)?.txID ||
         "";
 
-      if (!address || !isValidTronAddress(address)) {
+      if (!address || !isValidTronAddress(address, window.tronWeb)) {
         throw new Error("Deployment completed but a valid contract address was not returned.");
       }
 
-      let metadataMessage = validated.description
-        ? "Token deployed successfully. Off-chain description was kept locally only."
-        : "Token deployed successfully.";
+      setStatus("Submitting token metadata...");
+      let metadataMessage = "Token deployed successfully.";
 
       try {
         const metaRes = await fetch("/api/submit-token-meta", {
@@ -404,49 +556,40 @@ export default function Home() {
           },
           body: JSON.stringify({
             contractAddress: address,
-            name: validated.name,
-            symbol: validated.symbol,
-            decimals: Number(TOKEN_DECIMALS),
-            totalSupply: validated.supply,
-            logoIpfsHash: logoMetadata.ipfsHash || "",
-            logoCid: logoMetadata.cid || logoMetadata.ipfsHash || "",
-            logoUrl: logoMetadata.isPlaceholder ? "" : logoMetadata.gatewayUrl || "",
-            chain: activeNetwork,
-            deployerAddress: activeWallet,
+            ...metadataPayload,
             deploymentTxHash: txId,
           }),
         });
 
         const metaJson = await metaRes.json().catch(() => null);
 
-        if (metaRes.ok && metaJson?.message) {
-          metadataMessage = metaJson.message;
-        } else if (metaJson?.message) {
-          metadataMessage = `Token deployed. Metadata submission skipped: ${metaJson.message}`;
+        if (!metaRes.ok) {
+          metadataMessage = metaJson?.message
+            ? `Token deployed. Metadata submission failed: ${metaJson.message}`
+            : "Token deployed. Metadata submission failed.";
+        } else {
+          metadataMessage = metaJson?.message || "Token deployed and metadata submitted successfully.";
         }
       } catch {
-        metadataMessage = "Token deployed. Metadata submission was skipped.";
+        metadataMessage = "Token deployed. Metadata submission request failed before the server responded.";
       }
 
       setResult({
-        ipfsHash: logoMetadata.isPlaceholder ? "" : logoMetadata.ipfsHash || "",
-        gatewayUrl: logoMetadata.isPlaceholder ? "" : logoMetadata.gatewayUrl || "",
+        cid: logoMetadata.cid,
+        gatewayUrl: logoMetadata.gatewayUrl,
         contractAddress: address,
         address,
         explorerUrl: getContractExplorerUrl(address, activeNetwork),
         txId,
         txExplorerUrl: txId ? getTransactionExplorerUrl(txId, activeNetwork) : "",
         metadataMessage,
+        totalSupplyBaseUnits,
       });
 
       setStatus("Deployment completed successfully.");
     } catch (error: any) {
       console.error(error);
-
-      const message =
-        error?.message || error?.response?.message || "Deployment failed.";
-
-      setStatus(message);
+      setStatus(mapDeployError(error));
     } finally {
       setIsDeploying(false);
     }
@@ -619,7 +762,7 @@ export default function Home() {
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Optional token description"
-              maxLength={160}
+              maxLength={280}
             />
           </label>
 
@@ -637,11 +780,13 @@ export default function Home() {
             className="deployButton"
             type="button"
             onClick={handleDeploy}
-            disabled={isDeploying}
+            disabled={Boolean(deployDisabledReason)}
           >
             {isDeploying ? "DEPLOYING TOKEN" : "DEPLOY TOKEN"}
             <span>↗</span>
           </button>
+
+          {deployDisabledReason && <div className="hint">{deployDisabledReason}</div>}
 
           <div className="status">
             <span />
@@ -699,14 +844,20 @@ export default function Home() {
 
           <InfoRow
             label="IPFS CID"
-            value={result.ipfsHash || "No logo uploaded"}
-            onCopy={() => copy(result.ipfsHash || "")}
+            value={result.cid || "No logo uploaded"}
+            onCopy={() => copy(result.cid || "")}
           />
 
           <InfoRow
             label="IPFS GATEWAY"
             value={result.gatewayUrl || "—"}
             onCopy={() => copy(result.gatewayUrl || "")}
+          />
+
+          <InfoRow
+            label="TOTAL SUPPLY BASE UNITS"
+            value={result.totalSupplyBaseUnits || "—"}
+            onCopy={() => copy(result.totalSupplyBaseUnits || "")}
           />
 
           <p className="metaMessage">{result.metadataMessage}</p>
@@ -1081,6 +1232,13 @@ export default function Home() {
         .deployButton:hover:not(:disabled) {
           transform: translateY(-1px);
           filter: brightness(1.12);
+        }
+
+        .hint {
+          margin-top: 12px;
+          color: #aab2c3;
+          font-size: 11px;
+          line-height: 1.6;
         }
 
         .status {

@@ -2,27 +2,81 @@
  * TRON network utilities and constants.
  */
 
+declare global {
+  interface Window {
+    tronWeb?: TronWebLike;
+    tronLink?: {
+      tronWeb?: TronWebLike;
+      request?: (args: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
+    };
+  }
+}
+
 export enum TronNetwork {
   MAINNET = "TRON_MAINNET",
   NILE_TESTNET = "TRON_NILE",
 }
 
+type TronWebLike = {
+  defaultAddress?: {
+    base58?: string;
+    hex?: string;
+  };
+  fullNode?: {
+    host?: string;
+    fullHost?: string;
+  };
+  solidityNode?: {
+    host?: string;
+    fullHost?: string;
+  };
+  eventServer?: {
+    host?: string;
+    fullHost?: string;
+  };
+  defaultNode?: string;
+  fullHost?: string;
+  currentProviders?: () => {
+    fullNode?: { host?: string };
+    solidityNode?: { host?: string };
+    eventServer?: { host?: string };
+  };
+  isAddress?: (value: string) => boolean;
+  address?: {
+    fromHex: (value: string) => string;
+  };
+  trx?: {
+    getBalance?: (address: string) => Promise<unknown>;
+  };
+  contract?: () => {
+    new: (options: {
+      abi: unknown;
+      bytecode: string;
+      feeLimit: number;
+      callValue: number;
+      parameters: [string, string, string];
+    }) => Promise<unknown>;
+  };
+};
+
 export const TRON_NETWORK_CONFIG = {
   [TronNetwork.MAINNET]: {
     name: "TRON Mainnet",
-    chainId: "0x39",
+    chainId: "0x2b6653dc",
     rpcUrl: "https://api.trongrid.io",
     explorerUrl: "https://tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON MAINNET",
+    minimumRecommendedBalanceSun: 100_000_000n,
   },
   [TronNetwork.NILE_TESTNET]: {
     name: "TRON Nile Testnet",
-    chainId: "0x00a0",
+    chainId: "0xcd8690dc",
     rpcUrl: "https://nile.trongrid.io",
     explorerUrl: "https://nile.tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON NILE",
+    minimumRecommendedBalanceSun: 100_000_000n,
   },
 } as const;
 
@@ -34,9 +88,7 @@ function normalizeProviderHost(value: unknown) {
   return value.trim().toLowerCase();
 }
 
-function collectProviderHosts(tronWeb: any) {
-  const hosts = new Set<string>();
-
+function addProviderHosts(hosts: Set<string>, tronWeb: TronWebLike | undefined) {
   const addHost = (value: unknown) => {
     const host = normalizeProviderHost(value);
 
@@ -62,6 +114,17 @@ function collectProviderHosts(tronWeb: any) {
   } catch {
     // Ignore provider access failures and fall back to the hosts already collected.
   }
+}
+
+function collectProviderHosts() {
+  const hosts = new Set<string>();
+
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  addProviderHosts(hosts, window.tronWeb);
+  addProviderHosts(hosts, window.tronLink?.tronWeb);
 
   return [...hosts];
 }
@@ -71,16 +134,31 @@ function detectNetworkFromHost(host: string): TronNetwork | null {
     return null;
   }
 
-  if (host.includes("nile")) {
-    return TronNetwork.NILE_TESTNET;
-  }
+  try {
+    const parsed = new URL(host.startsWith("http") ? host : `https://${host}`);
+    const normalizedHost = parsed.host.toLowerCase();
 
-  if (
-    host.includes("api.trongrid.io") ||
-    host.includes("tronscan.org") ||
-    host.includes("tronstack.io")
-  ) {
-    return TronNetwork.MAINNET;
+    if (normalizedHost.includes("nile")) {
+      return TronNetwork.NILE_TESTNET;
+    }
+
+    if (
+      normalizedHost === "api.trongrid.io" ||
+      normalizedHost.endsWith(".trongrid.io") ||
+      normalizedHost === "tronscan.org" ||
+      normalizedHost.endsWith(".tronscan.org") ||
+      normalizedHost.endsWith("tronstack.io")
+    ) {
+      return TronNetwork.MAINNET;
+    }
+  } catch {
+    if (host.includes("nile")) {
+      return TronNetwork.NILE_TESTNET;
+    }
+
+    if (host.includes("api.trongrid.io") || host.includes("tronscan.org")) {
+      return TronNetwork.MAINNET;
+    }
   }
 
   return null;
@@ -92,15 +170,9 @@ function detectNetworkFromHost(host: string): TronNetwork | null {
  */
 export async function detectTronNetwork(): Promise<TronNetwork | null> {
   try {
-    const tronWeb = (window as any).tronWeb;
-
-    if (!tronWeb) {
-      return null;
-    }
-
     const detectedNetworks = new Set<TronNetwork>();
 
-    for (const host of collectProviderHosts(tronWeb)) {
+    for (const host of collectProviderHosts()) {
       const network = detectNetworkFromHost(host);
 
       if (network) {
@@ -122,13 +194,62 @@ export async function detectTronNetwork(): Promise<TronNetwork | null> {
 /**
  * Validate whether a value is a TRON base58 address.
  */
-export function isValidTronAddress(address: string): boolean {
+export function isValidTronAddress(address: string, tronWeb?: TronWebLike): boolean {
   if (!address || typeof address !== "string") {
     return false;
   }
 
-  const tronAddressRegex = /^T[1-9A-HJ-NP-Z]{32}$/;
+  if (tronWeb?.isAddress) {
+    try {
+      return Boolean(tronWeb.isAddress(address));
+    } catch {
+      // Fall through to the local validator below.
+    }
+  }
+
+  const tronAddressRegex = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
   return tronAddressRegex.test(address);
+}
+
+function normalizeSunValue(value: unknown): bigint {
+  if (typeof value === "bigint") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error("Invalid TRX balance returned by TronLink.");
+    }
+
+    return BigInt(Math.trunc(value));
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    return BigInt(value.trim());
+  }
+
+  throw new Error("Unexpected TRX balance response from TronLink.");
+}
+
+export async function getWalletBalanceSun(
+  tronWeb: TronWebLike | undefined,
+  address: string
+): Promise<bigint> {
+  if (!tronWeb?.trx?.getBalance) {
+    throw new Error("TronLink balance API is unavailable.");
+  }
+
+  return normalizeSunValue(await tronWeb.trx.getBalance(address));
+}
+
+export function formatSunAsTrx(value: bigint | string | number): string {
+  const sun = normalizeSunValue(value);
+  const sign = sun < 0n ? "-" : "";
+  const absolute = sun < 0n ? -sun : sun;
+  const whole = absolute / 1_000_000n;
+  const fraction = (absolute % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+
+  return fraction ? `${sign}${whole.toString()}.${fraction}` : `${sign}${whole.toString()}`;
 }
 
 /**
@@ -153,11 +274,9 @@ export function getTransactionExplorerUrl(
   return `${config.explorerUrl}/#/transaction/${txHash}`;
 }
 
-/**
- * Format SUN to TRX.
- */
-export function sunToTrx(sun: string | number): string {
-  const num = typeof sun === "string" ? BigInt(sun) : BigInt(sun);
-  const trx = Number(num) / 1_000_000;
-  return trx.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+export function isSupportedNetwork(
+  network: TronNetwork | null,
+  supportedNetworks: Set<TronNetwork>
+): network is TronNetwork {
+  return Boolean(network && supportedNetworks.has(network));
 }

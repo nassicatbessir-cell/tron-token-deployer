@@ -6,6 +6,17 @@ const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const DEFAULT_MAX_UPLOAD_SIZE_MB = 5;
 const DEFAULT_GATEWAY_BASE_URL = "https://gateway.pinata.cloud/ipfs";
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30_000;
+const CID_PATTERN = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[1-9A-Za-z]{20,})$/;
+
+function noStoreJson(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store",
+      ...init?.headers,
+    },
+  });
+}
 
 function getMaxUploadSizeBytes() {
   const maxSizeMB = Number.parseInt(
@@ -37,16 +48,7 @@ function getGatewayBaseUrl() {
   return (process.env.PINATA_GATEWAY_BASE_URL || DEFAULT_GATEWAY_BASE_URL).replace(/\/$/, "");
 }
 
-function getSafeExtension(originalName: string, mimeType: string) {
-  const normalizedName = originalName.trim();
-  const extension = normalizedName.includes(".")
-    ? normalizedName.split(".").pop()?.toLowerCase() || ""
-    : "";
-
-  if (/^[a-z0-9]{2,5}$/.test(extension)) {
-    return extension;
-  }
-
+function getSafeExtension(mimeType: string) {
   switch (mimeType) {
     case "image/png":
       return "png";
@@ -69,7 +71,7 @@ function sanitizeFilename(originalName: string, mimeType: string) {
     .slice(0, 64);
 
   const safeBaseName = asciiBase || "token-logo";
-  const extension = getSafeExtension(originalName, mimeType);
+  const extension = getSafeExtension(mimeType);
 
   return `${safeBaseName}.${extension}`;
 }
@@ -90,80 +92,124 @@ function getPinataErrorMessage(data: any, fallback: string) {
   return fallback;
 }
 
+function hasAllowedOrigin(request: Request) {
+  const originHeader = request.headers.get("origin");
+
+  if (!originHeader) {
+    return true;
+  }
+
+  try {
+    const requestOrigin = new URL(request.url).origin;
+    return new URL(originHeader).origin === requestOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function matchesDeclaredMimeType(bytes: Uint8Array, mimeType: string) {
+  if (mimeType === "image/png") {
+    const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    return pngSignature.every((byte, index) => bytes[index] === byte);
+  }
+
+  if (mimeType === "image/jpeg") {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+
+  if (mimeType === "image/webp") {
+    const riff = String.fromCharCode(...bytes.slice(0, 4));
+    const webp = String.fromCharCode(...bytes.slice(8, 12));
+    return riff === "RIFF" && webp === "WEBP";
+  }
+
+  return false;
+}
+
 export async function POST(request: Request) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), getUploadTimeoutMs());
 
   try {
+    if (!hasAllowedOrigin(request)) {
+      return noStoreJson(
+        {
+          error: "Cross-origin logo upload requests are not allowed.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const maxUploadSizeBytes = getMaxUploadSizeBytes();
+    const contentLength = Number.parseInt(request.headers.get("content-length") || "0", 10);
+
+    if (Number.isFinite(contentLength) && contentLength > maxUploadSizeBytes + 64 * 1024) {
+      return noStoreJson(
+        {
+          error: `Request body exceeds the ${Math.round(maxUploadSizeBytes / 1024 / 1024)}MB upload limit.`,
+        },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") ?? formData.get("logo");
 
     if (!(file instanceof File)) {
-      return NextResponse.json(
+      return noStoreJson(
         {
           error: "Logo file was not received.",
           hint: "Use the file or logo form field.",
         },
-        {
-          status: 400,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: 400 }
       );
     }
 
     const mimeType = file.type.toLowerCase();
 
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      return NextResponse.json(
+      return noStoreJson(
         {
           error: "Only PNG, JPEG, or WebP images are supported.",
         },
-        {
-          status: 400,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: 400 }
       );
     }
 
-    const maxUploadSizeBytes = getMaxUploadSizeBytes();
-
     if (file.size > maxUploadSizeBytes) {
-      return NextResponse.json(
+      return noStoreJson(
         {
           error: `File size exceeds the ${Math.round(maxUploadSizeBytes / 1024 / 1024)}MB limit.`,
         },
-        {
-          status: 400,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: 400 }
       );
     }
 
     const jwt = process.env.PINATA_JWT;
 
     if (!jwt) {
-      return NextResponse.json(
+      return noStoreJson(
         {
           error: "PINATA_JWT is not configured on the server.",
         },
+        { status: 500 }
+      );
+    }
+
+    const bytes = await file.arrayBuffer();
+    const byteView = new Uint8Array(bytes);
+
+    if (!matchesDeclaredMimeType(byteView, mimeType)) {
+      return noStoreJson(
         {
-          status: 500,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+          error: "Logo content does not match the declared image type.",
+        },
+        { status: 400 }
       );
     }
 
     const originalFilename = file.name || "token-logo";
     const filename = sanitizeFilename(originalFilename, mimeType);
-    const bytes = await file.arrayBuffer();
 
     const pinataForm = new FormData();
     pinataForm.append("file", new Blob([bytes], { type: mimeType }), filename);
@@ -190,68 +236,46 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const pinataMessage = getPinataErrorMessage(data, "Logo upload to IPFS failed.");
 
-      return NextResponse.json(
+      return noStoreJson(
         {
           error: pinataMessage,
         },
-        {
-          status: response.status || 502,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: response.status || 502 }
       );
     }
 
-    const ipfsHash = data?.IpfsHash;
+    const ipfsHash = typeof data?.IpfsHash === "string" ? data.IpfsHash.trim() : "";
 
-    if (!ipfsHash) {
-      return NextResponse.json(
+    if (!CID_PATTERN.test(ipfsHash)) {
+      return noStoreJson(
         {
           error: "Pinata did not return a valid CID.",
         },
-        {
-          status: 502,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: 502 }
       );
     }
 
     const gatewayBaseUrl = getGatewayBaseUrl();
 
-    return NextResponse.json(
-      {
-        success: true,
-        ipfsHash,
-        cid: ipfsHash,
-        gatewayUrl: `${gatewayBaseUrl}/${ipfsHash}`,
-        ipfsUrl: `ipfs://${ipfsHash}`,
-        filename,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
-    );
+    return noStoreJson({
+      success: true,
+      ipfsHash,
+      cid: ipfsHash,
+      gatewayUrl: `${gatewayBaseUrl}/${ipfsHash}`,
+      ipfsUrl: `ipfs://${ipfsHash}`,
+      filename,
+    });
   } catch (error: any) {
     const message =
       error?.name === "AbortError"
         ? "Logo upload request timed out before Pinata responded."
         : error?.message || "Error uploading logo.";
 
-    return NextResponse.json(
+    return noStoreJson(
       {
         error: message,
       },
-      {
-        status: 500,
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
+      { status: 500 }
     );
   } finally {
     clearTimeout(timeoutId);

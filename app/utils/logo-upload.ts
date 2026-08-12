@@ -17,6 +17,7 @@ interface UploadResult {
   filename?: string;
   originalFilename?: string;
   error?: string;
+  status?: number;
 }
 
 function getMaxUploadSizeBytes() {
@@ -32,16 +33,7 @@ function getMaxUploadSizeBytes() {
   return normalizedMaxSizeMB * 1024 * 1024;
 }
 
-function getSafeExtension(originalName: string, mimeType: string) {
-  const normalizedName = originalName.trim();
-  const extension = normalizedName.includes(".")
-    ? normalizedName.split(".").pop()?.toLowerCase() || ""
-    : "";
-
-  if (/^[a-z0-9]{2,5}$/.test(extension)) {
-    return extension;
-  }
-
+function getSafeExtension(mimeType: string) {
   switch (mimeType) {
     case "image/png":
       return "png";
@@ -64,7 +56,7 @@ export function sanitizeUploadFilename(originalName: string, mimeType: string) {
     .slice(0, 64);
 
   const safeBaseName = asciiBase || "token-logo";
-  const extension = getSafeExtension(originalName, mimeType);
+  const extension = getSafeExtension(mimeType);
 
   return `${safeBaseName}.${extension}`;
 }
@@ -78,8 +70,12 @@ function prepareLogoFileForUpload(file: File) {
   });
 }
 
+function shouldRetryUpload(result: UploadResult) {
+  return !result.status || result.status >= 500 || result.status === 408 || result.status === 429;
+}
+
 /**
- * Upload logo with automatic retry on failure.
+ * Upload logo with automatic retry on retryable failure.
  */
 export async function uploadLogoWithRetry(
   file: File,
@@ -93,7 +89,7 @@ export async function uploadLogoWithRetry(
         return result;
       }
 
-      if (attempt < retries) {
+      if (attempt < retries && shouldRetryUpload(result)) {
         await new Promise((resolve) =>
           setTimeout(resolve, RETRY_DELAY_MS * Math.pow(1.5, attempt - 1))
         );
@@ -105,8 +101,7 @@ export async function uploadLogoWithRetry(
       if (attempt === retries) {
         return {
           success: false,
-          error:
-            error?.message || `Upload failed after ${retries} attempts`,
+          error: error?.message || `Upload failed after ${retries} attempts`,
         };
       }
 
@@ -134,6 +129,7 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       return {
         success: false,
         error: "Logo file is required.",
+        status: 400,
       };
     }
 
@@ -141,6 +137,7 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       return {
         success: false,
         error: "Only PNG, JPEG, or WebP images are supported.",
+        status: 400,
       };
     }
 
@@ -150,6 +147,7 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       return {
         success: false,
         error: `File too large. Maximum size is ${Math.round(maxSizeBytes / 1024 / 1024)}MB.`,
+        status: 400,
       };
     }
 
@@ -170,6 +168,7 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       return {
         success: false,
         error: data?.error || `Upload failed with status ${response.status}`,
+        status: response.status,
       };
     }
 
@@ -181,12 +180,14 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       ipfsUrl: data?.ipfsUrl,
       filename: data?.filename,
       originalFilename: file.name,
+      status: response.status,
     };
   } catch (error: any) {
     if (error?.name === "AbortError") {
       return {
         success: false,
         error: "Upload timed out. Please try again.",
+        status: 408,
       };
     }
 
@@ -194,8 +195,9 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       success: false,
       error:
         error?.message === "Failed to fetch"
-          ? "Upload request could not be sent. Check the network connection and try again."
+          ? "Logo upload request failed before the server responded."
           : error?.message || "Unknown upload error",
+      status: 0,
     };
   } finally {
     clearTimeout(timeoutId);
