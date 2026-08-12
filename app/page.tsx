@@ -8,6 +8,8 @@ import {
 import {
   detectTronNetwork,
   getContractExplorerUrl,
+  getTransactionExplorerUrl,
+  isValidTronAddress,
   TRON_NETWORK_CONFIG,
   TronNetwork,
 } from "@/app/utils/tron-network";
@@ -18,6 +20,8 @@ type DeployResult = {
   contractAddress?: string;
   address?: string;
   explorerUrl?: string;
+  txId?: string;
+  txExplorerUrl?: string;
   metadataMessage?: string;
 };
 
@@ -25,6 +29,10 @@ type ValidationResult = {
   name: string;
   symbol: string;
   supply: string;
+  description: string;
+  website: string;
+  telegram: string;
+  twitter: string;
 };
 
 const FEATURE_CARDS = [
@@ -41,9 +49,54 @@ const FEATURE_CARDS = [
   {
     title: "Safer logo pipeline",
     description:
-      "Logo uploads are validated, retried, and capped before they reach Pinata or the deployment result screen.",
+      "Logo uploads are validated, filename-safe, and capped before they reach Pinata or the deployment result screen.",
   },
 ];
+
+const SUPPORTED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const TOKEN_DECIMALS = 18;
+const MAX_LOGO_SIZE_MB = Number.parseInt(
+  process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || "5",
+  10
+);
+
+function validateOptionalHttpsUrl(value: string, label: string) {
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(normalizedValue);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  if (parsedUrl.protocol !== "https:") {
+    throw new Error(`${label} must use https.`);
+  }
+
+  return parsedUrl.toString();
+}
+
+function normalizeContractAddress(tronWeb: any, value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  if (value.startsWith("T")) {
+    return value;
+  }
+
+  try {
+    return tronWeb.address.fromHex(value);
+  } catch {
+    return value;
+  }
+}
 
 export default function Home() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -58,11 +111,18 @@ export default function Home() {
   const [tokenName, setTokenName] = useState("MyToken");
   const [symbol, setSymbol] = useState("MTK");
   const [supply, setSupply] = useState("1000000");
+  const [description, setDescription] = useState("");
+  const [website, setWebsite] = useState("");
+  const [telegram, setTelegram] = useState("");
+  const [twitter, setTwitter] = useState("");
 
   const networkLabel = useMemo(() => {
-    if (!network) return "NETWORK UNKNOWN";
+    if (!network) {
+      return wallet ? "NETWORK UNAVAILABLE" : "NETWORK UNKNOWN";
+    }
+
     return TRON_NETWORK_CONFIG[network].displayName;
-  }, [network]);
+  }, [network, wallet]);
 
   useEffect(() => {
     let active = true;
@@ -125,7 +185,13 @@ export default function Home() {
         throw new Error("Wallet connection was not completed.");
       }
 
-      setWallet(tronWeb.defaultAddress.base58);
+      const connectedAddress = tronWeb.defaultAddress.base58;
+
+      if (!isValidTronAddress(connectedAddress)) {
+        throw new Error("TronLink returned an invalid wallet address.");
+      }
+
+      setWallet(connectedAddress);
       setNetwork(await detectTronNetwork());
       setStatus("Wallet connected successfully.");
       return true;
@@ -172,6 +238,10 @@ export default function Home() {
       throw new Error("Token name is required.");
     }
 
+    if (normalizedName.length > 64) {
+      throw new Error("Token name must be 64 characters or fewer.");
+    }
+
     if (!/^[A-Z0-9]{2,10}$/.test(normalizedSymbol)) {
       throw new Error("Symbol must be 2-10 uppercase letters or numbers.");
     }
@@ -184,10 +254,24 @@ export default function Home() {
       throw new Error("Initial supply must be greater than zero.");
     }
 
+    if (logoFile) {
+      if (!SUPPORTED_LOGO_TYPES.has(logoFile.type)) {
+        throw new Error("Logo must be a PNG, JPEG, or WebP image.");
+      }
+
+      if (logoFile.size > MAX_LOGO_SIZE_MB * 1024 * 1024) {
+        throw new Error(`Logo must be ${MAX_LOGO_SIZE_MB}MB or smaller.`);
+      }
+    }
+
     return {
       name: normalizedName,
       symbol: normalizedSymbol,
       supply: normalizedSupply,
+      description: description.trim(),
+      website: validateOptionalHttpsUrl(website, "Website"),
+      telegram: validateOptionalHttpsUrl(telegram, "Telegram"),
+      twitter: validateOptionalHttpsUrl(twitter, "Twitter/X"),
     };
   };
 
@@ -212,7 +296,20 @@ export default function Home() {
         }
       }
 
-      const activeNetwork = (await detectTronNetwork()) || TronNetwork.MAINNET;
+      const activeWallet = window.tronWeb.defaultAddress.base58;
+
+      if (!isValidTronAddress(activeWallet)) {
+        throw new Error("Connected wallet address is invalid.");
+      }
+
+      const activeNetwork = await detectTronNetwork();
+
+      if (!activeNetwork) {
+        throw new Error(
+          "Could not detect the active TRON network. Open the dApp inside TronLink and try again."
+        );
+      }
+
       setNetwork(activeNetwork);
 
       let logoMetadata = generateFallbackLogoMetadata(validated.symbol);
@@ -232,8 +329,8 @@ export default function Home() {
         } else {
           setStatus(
             uploadResult.error
-              ? `${uploadResult.error} Continuing without hosted logo...`
-              : "Logo upload failed. Continuing without hosted logo..."
+              ? `${uploadResult.error} Continuing without a hosted logo...`
+              : "Logo upload failed. Continuing without a hosted logo..."
           );
         }
       }
@@ -243,13 +340,13 @@ export default function Home() {
       const artifactRes = await fetch("/api/token-artifact", {
         cache: "no-store",
       });
-      const artifact = await artifactRes.json();
+      const artifact = await artifactRes.json().catch(() => null);
 
       if (!artifactRes.ok) {
-        throw new Error(artifact.error || "Could not load contract artifact.");
+        throw new Error(artifact?.error || "Could not load contract artifact.");
       }
 
-      if (!artifact.abi || !artifact.bytecode) {
+      if (!artifact?.abi || !artifact?.bytecode) {
         throw new Error("ABI or bytecode is missing.");
       }
 
@@ -259,7 +356,7 @@ export default function Home() {
 
       setStatus("Waiting for TronLink confirmation...");
 
-      const contract = await window.tronWeb.contract().new({
+      const deployedContract = await tronWeb.contract().new({
         abi: artifact.abi,
         bytecode,
         feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
@@ -267,14 +364,24 @@ export default function Home() {
         parameters: [validated.name, validated.symbol, validated.supply],
       });
 
-      const address =
-        contract?.address || contract?._address || contract?.options?.address;
+      const rawAddress =
+        deployedContract?.address ||
+        deployedContract?._address ||
+        deployedContract?.options?.address;
+      const address = normalizeContractAddress(tronWeb, rawAddress);
+      const txId =
+        deployedContract?.transaction?.txID ||
+        deployedContract?.transaction?.txId ||
+        deployedContract?.txID ||
+        "";
 
-      if (!address) {
-        throw new Error("Deployment completed but contract address was not returned.");
+      if (!address || !isValidTronAddress(address)) {
+        throw new Error("Deployment completed but a valid contract address was not returned.");
       }
 
-      let metadataMessage = "Token deployed successfully.";
+      let metadataMessage = validated.description
+        ? "Token deployed successfully. Off-chain description was kept locally only."
+        : "Token deployed successfully.";
 
       try {
         const metaRes = await fetch("/api/submit-token-meta", {
@@ -286,14 +393,14 @@ export default function Home() {
             contractAddress: address,
             name: validated.name,
             symbol: validated.symbol,
-            decimals: 18,
+            decimals: TOKEN_DECIMALS,
             totalSupply: validated.supply,
             logoIpfsHash: logoMetadata.ipfsHash || "",
             logoCid: logoMetadata.cid || logoMetadata.ipfsHash || "",
             logoUrl: logoMetadata.isPlaceholder ? "" : logoMetadata.gatewayUrl || "",
             chain: activeNetwork,
-            deployerAddress: window.tronWeb.defaultAddress.base58,
-            deploymentTxHash: contract?.transaction?.txID || contract?.txID,
+            deployerAddress: activeWallet,
+            deploymentTxHash: txId,
           }),
         });
 
@@ -314,6 +421,8 @@ export default function Home() {
         contractAddress: address,
         address,
         explorerUrl: getContractExplorerUrl(address, activeNetwork),
+        txId,
+        txExplorerUrl: txId ? getTransactionExplorerUrl(txId, activeNetwork) : "",
         metadataMessage,
       });
 
@@ -455,12 +564,58 @@ export default function Home() {
             </label>
           </div>
 
+          <div className="twoColumns">
+            <label>
+              DECIMALS
+              <input value={TOKEN_DECIMALS} readOnly />
+            </label>
+
+            <label>
+              WEBSITE
+              <input
+                value={website}
+                onChange={(event) => setWebsite(event.target.value)}
+                placeholder="https://example.com"
+              />
+            </label>
+          </div>
+
+          <div className="twoColumns">
+            <label>
+              TELEGRAM
+              <input
+                value={telegram}
+                onChange={(event) => setTelegram(event.target.value)}
+                placeholder="https://t.me/example"
+              />
+            </label>
+
+            <label>
+              TWITTER / X
+              <input
+                value={twitter}
+                onChange={(event) => setTwitter(event.target.value)}
+                placeholder="https://x.com/example"
+              />
+            </label>
+          </div>
+
+          <label>
+            DESCRIPTION
+            <input
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Optional token description"
+              maxLength={160}
+            />
+          </label>
+
           <label className="upload">
             <span>{logoFile ? logoFile.name : "SELECT TOKEN LOGO"}</span>
 
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              accept="image/png,image/jpeg,image/webp"
               onChange={(event) => handleLogo(event.target.files?.[0] || null)}
             />
           </label>
@@ -524,6 +679,12 @@ export default function Home() {
           />
 
           <InfoRow
+            label="TRANSACTION ID"
+            value={result.txId || ""}
+            onCopy={() => copy(result.txId || "")}
+          />
+
+          <InfoRow
             label="IPFS CID"
             value={result.ipfsHash || "No logo uploaded"}
             onCopy={() => copy(result.ipfsHash || "")}
@@ -545,6 +706,17 @@ export default function Home() {
           >
             OPEN CONTRACT ON TRONSCAN ↗
           </a>
+
+          {result.txExplorerUrl && (
+            <a
+              className="scanButton"
+              href={result.txExplorerUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              OPEN TRANSACTION ON TRONSCAN ↗
+            </a>
+          )}
         </section>
       )}
 
