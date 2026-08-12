@@ -1,5 +1,5 @@
 /**
- * TRON Network utilities and constants
+ * TRON network utilities and constants.
  */
 
 export enum TronNetwork {
@@ -13,7 +13,7 @@ export const TRON_NETWORK_CONFIG = {
     chainId: "0x39",
     rpcUrl: "https://api.trongrid.io",
     explorerUrl: "https://tronscan.org",
-    feeLimit: 500_000_000, // 500 TRX in sun
+    feeLimit: 500_000_000,
     displayName: "TRON MAINNET",
   },
   [TronNetwork.NILE_TESTNET]: {
@@ -24,10 +24,71 @@ export const TRON_NETWORK_CONFIG = {
     feeLimit: 500_000_000,
     displayName: "TRON NILE",
   },
-};
+} as const;
+
+function normalizeProviderHost(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().toLowerCase();
+}
+
+function collectProviderHosts(tronWeb: any) {
+  const hosts = new Set<string>();
+
+  const addHost = (value: unknown) => {
+    const host = normalizeProviderHost(value);
+
+    if (host) {
+      hosts.add(host);
+    }
+  };
+
+  addHost(tronWeb?.fullNode?.host);
+  addHost(tronWeb?.solidityNode?.host);
+  addHost(tronWeb?.eventServer?.host);
+  addHost(tronWeb?.fullNode?.fullHost);
+  addHost(tronWeb?.solidityNode?.fullHost);
+  addHost(tronWeb?.eventServer?.fullHost);
+  addHost(tronWeb?.defaultNode);
+  addHost(tronWeb?.fullHost);
+
+  try {
+    const providers = tronWeb?.currentProviders?.();
+    addHost(providers?.fullNode?.host);
+    addHost(providers?.solidityNode?.host);
+    addHost(providers?.eventServer?.host);
+  } catch {
+    // Ignore provider access failures and fall back to the hosts already collected.
+  }
+
+  return [...hosts];
+}
+
+function detectNetworkFromHost(host: string): TronNetwork | null {
+  if (!host) {
+    return null;
+  }
+
+  if (host.includes("nile")) {
+    return TronNetwork.NILE_TESTNET;
+  }
+
+  if (
+    host.includes("api.trongrid.io") ||
+    host.includes("tronscan.org") ||
+    host.includes("tronstack.io")
+  ) {
+    return TronNetwork.MAINNET;
+  }
+
+  return null;
+}
 
 /**
- * Detect current TRON network from TronWeb instance
+ * Detect the current TRON network from the injected TronWeb instance.
+ * Returns null when the network cannot be determined with confidence.
  */
 export async function detectTronNetwork(): Promise<TronNetwork | null> {
   try {
@@ -37,30 +98,18 @@ export async function detectTronNetwork(): Promise<TronNetwork | null> {
       return null;
     }
 
-    // Check if we can access network info (TRON v5.3+)
-    if (tronWeb.fullNode?.host) {
-      const host = tronWeb.fullNode.host;
+    const detectedNetworks = new Set<TronNetwork>();
 
-      if (host.includes("nile")) {
-        return TronNetwork.NILE_TESTNET;
-      }
+    for (const host of collectProviderHosts(tronWeb)) {
+      const network = detectNetworkFromHost(host);
 
-      if (host.includes("trongrid.io") && !host.includes("nile")) {
-        return TronNetwork.MAINNET;
+      if (network) {
+        detectedNetworks.add(network);
       }
     }
 
-    // Fallback: try to detect by querying chain parameters
-    try {
-      const chainParameters = await tronWeb.trx.getChainParameters();
-
-      if (Array.isArray(chainParameters)) {
-        // TRON mainnet has different parameters than testnet
-        // This is a heuristic; you may need to refine based on actual parameters
-        return TronNetwork.MAINNET;
-      }
-    } catch {
-      // Continue to next detection method
+    if (detectedNetworks.size === 1) {
+      return [...detectedNetworks][0];
     }
 
     return null;
@@ -71,20 +120,19 @@ export async function detectTronNetwork(): Promise<TronNetwork | null> {
 }
 
 /**
- * Validate if address is valid TRON address
+ * Validate whether a value is a TRON base58 address.
  */
 export function isValidTronAddress(address: string): boolean {
   if (!address || typeof address !== "string") {
     return false;
   }
 
-  // TRON addresses start with T and are base58 encoded, 34 characters long
   const tronAddressRegex = /^T[1-9A-HJ-NP-Z]{32}$/;
   return tronAddressRegex.test(address);
 }
 
 /**
- * Get explorer URL for contract
+ * Get the explorer URL for a contract.
  */
 export function getContractExplorerUrl(
   contractAddress: string,
@@ -95,7 +143,7 @@ export function getContractExplorerUrl(
 }
 
 /**
- * Get transaction explorer URL
+ * Get the explorer URL for a transaction.
  */
 export function getTransactionExplorerUrl(
   txHash: string,
@@ -106,7 +154,7 @@ export function getTransactionExplorerUrl(
 }
 
 /**
- * Format SUN to TRX
+ * Format SUN to TRX.
  */
 export function sunToTrx(sun: string | number): string {
   const num = typeof sun === "string" ? BigInt(sun) : BigInt(sun);

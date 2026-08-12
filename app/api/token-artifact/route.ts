@@ -3,12 +3,39 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import solc from "solc";
 
+export const runtime = "nodejs";
+
 let cachedArtifact:
   | {
       abi: unknown;
       bytecode: string;
     }
   | null = null;
+
+function assertExpectedConstructor(abi: any) {
+  const constructorItem = Array.isArray(abi)
+    ? abi.find((item) => item?.type === "constructor")
+    : null;
+
+  if (!constructorItem) {
+    throw new Error("Compiled contract constructor is missing from the ABI.");
+  }
+
+  const inputTypes = Array.isArray(constructorItem.inputs)
+    ? constructorItem.inputs.map((input: any) => input?.type)
+    : [];
+
+  const expectedInputTypes = ["string", "string", "uint256"];
+
+  if (
+    inputTypes.length !== expectedInputTypes.length ||
+    inputTypes.some((type, index) => type !== expectedInputTypes[index])
+  ) {
+    throw new Error(
+      `Unexpected constructor signature: expected ${expectedInputTypes.join(", ")} but received ${inputTypes.join(", ") || "none"}.`
+    );
+  }
+}
 
 async function compileContract() {
   if (cachedArtifact) {
@@ -59,6 +86,8 @@ async function compileContract() {
     throw new Error("Compiled contract artifact is incomplete.");
   }
 
+  assertExpectedConstructor(artifact.abi);
+
   cachedArtifact = {
     abi: artifact.abi,
     bytecode: artifact.evm.bytecode.object,
@@ -85,7 +114,12 @@ export async function GET() {
           error?.message ||
           "Could not generate contract artifact from source.",
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }

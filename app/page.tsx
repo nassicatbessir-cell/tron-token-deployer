@@ -54,11 +54,18 @@ const FEATURE_CARDS = [
 ];
 
 const SUPPORTED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const TOKEN_DECIMALS = 18;
-const MAX_LOGO_SIZE_MB = Number.parseInt(
-  process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || "5",
+const TOKEN_DECIMALS = 18n;
+const DEFAULT_MAX_LOGO_SIZE_MB = 5;
+const MAX_UINT256 = (1n << 256n) - 1n;
+const MAX_CONTRACT_SUPPLY = MAX_UINT256 / 10n ** TOKEN_DECIMALS;
+const configuredMaxLogoSizeMb = Number.parseInt(
+  process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || `${DEFAULT_MAX_LOGO_SIZE_MB}`,
   10
 );
+const MAX_LOGO_SIZE_MB =
+  Number.isFinite(configuredMaxLogoSizeMb) && configuredMaxLogoSizeMb > 0
+    ? configuredMaxLogoSizeMb
+    : DEFAULT_MAX_LOGO_SIZE_MB;
 
 function validateOptionalHttpsUrl(value: string, label: string) {
   const normalizedValue = value.trim();
@@ -250,8 +257,14 @@ export default function Home() {
       throw new Error("Initial supply must be a whole number.");
     }
 
-    if (BigInt(normalizedSupply) <= 0n) {
+    const normalizedSupplyBigInt = BigInt(normalizedSupply);
+
+    if (normalizedSupplyBigInt <= 0n) {
       throw new Error("Initial supply must be greater than zero.");
+    }
+
+    if (normalizedSupplyBigInt > MAX_CONTRACT_SUPPLY) {
+      throw new Error("Initial supply exceeds the contract limit for 18 decimals.");
     }
 
     if (logoFile) {
@@ -393,7 +406,7 @@ export default function Home() {
             contractAddress: address,
             name: validated.name,
             symbol: validated.symbol,
-            decimals: TOKEN_DECIMALS,
+            decimals: Number(TOKEN_DECIMALS),
             totalSupply: validated.supply,
             logoIpfsHash: logoMetadata.ipfsHash || "",
             logoCid: logoMetadata.cid || logoMetadata.ipfsHash || "",
@@ -567,7 +580,7 @@ export default function Home() {
           <div className="twoColumns">
             <label>
               DECIMALS
-              <input value={TOKEN_DECIMALS} readOnly />
+              <input value={TOKEN_DECIMALS.toString()} readOnly />
             </label>
 
             <label>

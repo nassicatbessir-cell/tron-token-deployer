@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const DEFAULT_MAX_UPLOAD_SIZE_MB = 5;
 const DEFAULT_GATEWAY_BASE_URL = "https://gateway.pinata.cloud/ipfs";
+const DEFAULT_UPLOAD_TIMEOUT_MS = 30_000;
 
 function getMaxUploadSizeBytes() {
   const maxSizeMB = Number.parseInt(
@@ -17,6 +20,17 @@ function getMaxUploadSizeBytes() {
     : DEFAULT_MAX_UPLOAD_SIZE_MB;
 
   return normalizedMaxSizeMB * 1024 * 1024;
+}
+
+function getUploadTimeoutMs() {
+  const timeoutMs = Number.parseInt(
+    process.env.UPLOAD_TIMEOUT_MS || `${DEFAULT_UPLOAD_TIMEOUT_MS}`,
+    10
+  );
+
+  return Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_UPLOAD_TIMEOUT_MS;
 }
 
 function getGatewayBaseUrl() {
@@ -60,7 +74,26 @@ function sanitizeFilename(originalName: string, mimeType: string) {
   return `${safeBaseName}.${extension}`;
 }
 
+function getPinataErrorMessage(data: any, fallback: string) {
+  if (!data || typeof data !== "object") {
+    return fallback;
+  }
+
+  if (typeof data.error === "string" && data.error.trim()) {
+    return data.error.trim();
+  }
+
+  if (typeof data.message === "string" && data.message.trim()) {
+    return data.message.trim();
+  }
+
+  return fallback;
+}
+
 export async function POST(request: Request) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), getUploadTimeoutMs());
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") ?? formData.get("logo");
@@ -71,7 +104,12 @@ export async function POST(request: Request) {
           error: "Logo file was not received.",
           hint: "Use the file or logo form field.",
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -82,7 +120,12 @@ export async function POST(request: Request) {
         {
           error: "Only PNG, JPEG, or WebP images are supported.",
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -93,7 +136,12 @@ export async function POST(request: Request) {
         {
           error: `File size exceeds the ${Math.round(maxUploadSizeBytes / 1024 / 1024)}MB limit.`,
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -104,7 +152,12 @@ export async function POST(request: Request) {
         {
           error: "PINATA_JWT is not configured on the server.",
         },
-        { status: 500 }
+        {
+          status: 500,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -129,19 +182,24 @@ export async function POST(request: Request) {
       },
       body: pinataForm,
       cache: "no-store",
+      signal: controller.signal,
     });
 
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      console.error("Pinata error:", data);
+      const pinataMessage = getPinataErrorMessage(data, "Logo upload to IPFS failed.");
 
       return NextResponse.json(
         {
-          error: "Logo upload to IPFS failed.",
-          details: data,
+          error: pinataMessage,
         },
-        { status: response.status || 500 }
+        {
+          status: response.status || 502,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -151,9 +209,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "Pinata did not return a valid CID.",
-          details: data,
         },
-        { status: 502 }
+        {
+          status: 502,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
       );
     }
 
@@ -167,7 +229,6 @@ export async function POST(request: Request) {
         gatewayUrl: `${gatewayBaseUrl}/${ipfsHash}`,
         ipfsUrl: `ipfs://${ipfsHash}`,
         filename,
-        originalFilename,
       },
       {
         headers: {
@@ -176,13 +237,23 @@ export async function POST(request: Request) {
       }
     );
   } catch (error: any) {
-    console.error("Logo upload error:", error);
+    const message =
+      error?.name === "AbortError"
+        ? "Logo upload request timed out before Pinata responded."
+        : error?.message || "Error uploading logo.";
 
     return NextResponse.json(
       {
-        error: error?.message || "Error uploading logo.",
+        error: message,
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
