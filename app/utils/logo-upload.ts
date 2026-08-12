@@ -18,6 +18,8 @@ interface UploadResult {
   originalFilename?: string;
   error?: string;
   status?: number;
+  stage?: string;
+  errorCode?: string;
 }
 
 function getMaxUploadSizeBytes() {
@@ -46,23 +48,12 @@ function getSafeExtension(mimeType: string) {
   }
 }
 
-export function sanitizeUploadFilename(originalName: string, mimeType: string) {
-  const baseName = originalName.replace(/\.[^.]+$/, "").normalize("NFKD");
-  const asciiBase = baseName
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 64);
-
-  const safeBaseName = asciiBase || "token-logo";
-  const extension = getSafeExtension(mimeType);
-
-  return `${safeBaseName}.${extension}`;
+export function createSafeUploadFilename(mimeType: string) {
+  return `logo.${getSafeExtension(mimeType)}`;
 }
 
 function prepareLogoFileForUpload(file: File) {
-  const safeFilename = sanitizeUploadFilename(file.name || "token-logo", file.type);
+  const safeFilename = createSafeUploadFilename(file.type);
 
   return new File([file], safeFilename, {
     type: file.type,
@@ -130,6 +121,8 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
         success: false,
         error: "Logo file is required.",
         status: 400,
+        errorCode: "LOGO_UPLOAD_MISSING_FILE",
+        stage: "request_validation",
       };
     }
 
@@ -138,6 +131,8 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
         success: false,
         error: "Only PNG, JPEG, or WebP images are supported.",
         status: 400,
+        errorCode: "LOGO_UPLOAD_INVALID_MIME",
+        stage: "request_validation",
       };
     }
 
@@ -148,6 +143,8 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
         success: false,
         error: `File too large. Maximum size is ${Math.round(maxSizeBytes / 1024 / 1024)}MB.`,
         status: 400,
+        errorCode: "LOGO_UPLOAD_TOO_LARGE",
+        stage: "request_validation",
       };
     }
 
@@ -167,8 +164,10 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
     if (!response.ok) {
       return {
         success: false,
-        error: data?.error || `Upload failed with status ${response.status}`,
+        error: data?.message || data?.error || `Upload failed with status ${response.status}`,
         status: response.status,
+        errorCode: data?.error,
+        stage: data?.stage,
       };
     }
 
@@ -188,6 +187,8 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
         success: false,
         error: "Upload timed out. Please try again.",
         status: 408,
+        errorCode: "LOGO_UPLOAD_TIMEOUT",
+        stage: "pinata_upload",
       };
     }
 
@@ -198,6 +199,8 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
           ? "Logo upload request failed before the server responded."
           : error?.message || "Unknown upload error",
       status: 0,
+      errorCode: "LOGO_UPLOAD_REQUEST_FAILED",
+      stage: "request_parse",
     };
   } finally {
     clearTimeout(timeoutId);

@@ -18,6 +18,8 @@ A production-focused TRC20 token deployer built with Next.js, TronLink, Solidity
 - `app/api/submit-token-meta/route.ts` — forwards token metadata to an external registry
 - `contracts/TRC20Token.sol` — token contract source
 - `app/utils/` — network and upload helpers
+- `lib/upload-multipart.js` — raw multipart parser used to avoid Unicode filename ByteString failures
+- `tests/upload-regression.test.mjs` — upload regression tests for Unicode filenames and magic bytes
 
 ## Environment variables
 
@@ -65,9 +67,19 @@ Then open [http://localhost:3000](http://localhost:3000).
 7. request TronLink confirmation
 8. review the contract address, transaction ID, metadata result, and explorer links
 
+## Upload regression checks
+
+```bash
+npm run test:upload
+```
+
+This regression suite exercises the Unicode multipart parsing path without calling `request.formData()`.
+
 ## Notes
 
 - the deploy flow uses the contract source in `contracts/TRC20Token.sol`, not a manually pasted bytecode blob
-- logo uploads reject unsupported MIME types, oversized files, and cross-origin requests
+- the client now always rewrites logo upload filenames to ASCII-safe values such as `logo.png` before sending `FormData`
+- the server now parses multipart bodies from raw bytes so Unicode filenames do not fail before sanitization
+- logo uploads reject unsupported MIME types, oversized files, invalid magic bytes, and cross-origin requests
 - metadata submission is explicit; deployment success and metadata submission success are reported separately
 - `npm run build`, live Browser testing, and live TronLink deployment still need to be verified in a runtime with TronLink and valid server environment variables

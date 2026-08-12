@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:upload": "node --test tests/upload-regression.test.mjs",
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
