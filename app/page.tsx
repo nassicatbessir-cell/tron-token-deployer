@@ -65,10 +65,10 @@ const FEATURE_CARDS = [
 ];
 
 const SUPPORTED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const TOKEN_DECIMALS = 18n;
+const TOKEN_DECIMALS = BigInt(18);
 const DEFAULT_MAX_LOGO_SIZE_MB = 5;
-const MAX_UINT256 = (1n << 256n) - 1n;
-const MAX_CONTRACT_SUPPLY = MAX_UINT256 / 10n ** TOKEN_DECIMALS;
+const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1);
+const MAX_CONTRACT_SUPPLY = MAX_UINT256 / BigInt(10) ** TOKEN_DECIMALS;
 const configuredMaxLogoSizeMb = Number.parseInt(
   process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || `${DEFAULT_MAX_LOGO_SIZE_MB}`,
   10
@@ -116,7 +116,7 @@ function validateOptionalHttpsUrl(value: string, label: string) {
   return parsedUrl.toString();
 }
 
-function normalizeContractAddress(tronWeb: any, value: string | undefined) {
+function normalizeContractAddress(tronWeb: TronWebLike, value: string | undefined) {
   if (!value) {
     return "";
   }
@@ -126,14 +126,14 @@ function normalizeContractAddress(tronWeb: any, value: string | undefined) {
   }
 
   try {
-    return tronWeb.address.fromHex(value);
+    return tronWeb.address?.fromHex ? tronWeb.address.fromHex(value) : value;
   } catch {
     return value;
   }
 }
 
 function expandTokenAmountToBaseUnits(amount: string, decimals: bigint) {
-  return (BigInt(amount) * 10n ** decimals).toString();
+  return (BigInt(amount) * BigInt(10) ** decimals).toString();
 }
 
 function isExpectedConstructor(artifact: ArtifactResponse) {
@@ -149,12 +149,12 @@ function isExpectedConstructor(artifact: ArtifactResponse) {
   );
 }
 
-function mapDeployError(error: any) {
+function mapDeployError(error: unknown) {
   const message =
-    typeof error?.message === "string"
+    error instanceof Error
       ? error.message
-      : typeof error?.response?.message === "string"
-        ? error.response.message
+      : typeof error === "object" && error !== null && "response" in error
+        ? String((error as { response?: { message?: unknown } }).response?.message || "Deployment failed.")
         : "Deployment failed.";
 
   if (/rejected|denied|cancel/i.test(message)) {
@@ -271,8 +271,8 @@ export default function Home() {
           : "Wallet connected, but the TRON network could not be detected."
       );
       return true;
-    } catch (error: any) {
-      setStatus(error?.message || "Wallet connection failed.");
+    } catch (error: unknown) {
+      setStatus(error instanceof Error ? error.message : "Wallet connection failed.");
       return false;
     } finally {
       setIsConnecting(false);
@@ -328,7 +328,7 @@ export default function Home() {
 
     const normalizedSupplyBigInt = BigInt(normalizedSupply);
 
-    if (normalizedSupplyBigInt <= 0n) {
+    if (normalizedSupplyBigInt <= BigInt(0)) {
       throw new Error("Initial supply must be greater than zero.");
     }
 
@@ -361,8 +361,8 @@ export default function Home() {
     try {
       validateForm();
       return "";
-    } catch (error: any) {
-      return error?.message || "Token data is invalid.";
+    } catch (error: unknown) {
+      return error instanceof Error ? error.message : "Token data is invalid.";
     }
   }, [tokenName, symbol, supply, description, website, telegram, twitter, logoFile]);
 
@@ -530,15 +530,23 @@ export default function Home() {
         parameters: [validated.name, validated.symbol, validated.supply],
       });
 
+      const deployedContractResult = deployedContract as {
+        address?: string;
+        _address?: string;
+        options?: { address?: string };
+        transaction?: { txID?: string; txId?: string };
+        txID?: string;
+      };
+
       const rawAddress =
-        (deployedContract as any)?.address ||
-        (deployedContract as any)?._address ||
-        (deployedContract as any)?.options?.address;
+        deployedContractResult.address ||
+        deployedContractResult._address ||
+        deployedContractResult.options?.address;
       const address = normalizeContractAddress(window.tronWeb, rawAddress);
       const txId =
-        (deployedContract as any)?.transaction?.txID ||
-        (deployedContract as any)?.transaction?.txId ||
-        (deployedContract as any)?.txID ||
+        deployedContractResult.transaction?.txID ||
+        deployedContractResult.transaction?.txId ||
+        deployedContractResult.txID ||
         "";
 
       if (!address || !isValidTronAddress(address, window.tronWeb)) {
@@ -561,7 +569,7 @@ export default function Home() {
           }),
         });
 
-        const metaJson = await metaRes.json().catch(() => null);
+        const metaJson = await metaRes.json().catch(() => null) as { message?: string } | null;
 
         if (!metaRes.ok) {
           metadataMessage = metaJson?.message
@@ -587,7 +595,7 @@ export default function Home() {
       });
 
       setStatus("Deployment completed successfully.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       setStatus(mapDeployError(error));
     } finally {

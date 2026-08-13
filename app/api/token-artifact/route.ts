@@ -6,14 +6,23 @@ import solc from "solc";
 
 export const runtime = "nodejs";
 
-let cachedArtifact:
-  | {
-      sourceHash: string;
-      abi: unknown;
-      bytecode: string;
-      constructorAbi: unknown;
-    }
-  | null = null;
+type ContractConstructorInput = {
+  type?: string;
+};
+
+type ContractConstructorAbi = {
+  type?: string;
+  inputs?: ContractConstructorInput[];
+};
+
+type CompiledArtifact = {
+  sourceHash: string;
+  abi: ContractConstructorAbi[];
+  bytecode: string;
+  constructorAbi: ContractConstructorAbi;
+};
+
+let cachedArtifact: CompiledArtifact | null = null;
 
 function noStoreJson(body: unknown, init?: ResponseInit) {
   return NextResponse.json(body, {
@@ -25,7 +34,7 @@ function noStoreJson(body: unknown, init?: ResponseInit) {
   });
 }
 
-function assertExpectedConstructor(abi: any) {
+function assertExpectedConstructor(abi: ContractConstructorAbi[]) {
   const constructorItem = Array.isArray(abi)
     ? abi.find((item) => item?.type === "constructor")
     : null;
@@ -35,14 +44,14 @@ function assertExpectedConstructor(abi: any) {
   }
 
   const inputTypes = Array.isArray(constructorItem.inputs)
-    ? constructorItem.inputs.map((input: any) => input?.type)
+    ? constructorItem.inputs.map((input: ContractConstructorInput) => input?.type)
     : [];
 
   const expectedInputTypes = ["string", "string", "uint256"];
 
   if (
     inputTypes.length !== expectedInputTypes.length ||
-    inputTypes.some((type, index) => type !== expectedInputTypes[index])
+    inputTypes.some((inputType: string | undefined, index: number) => inputType !== expectedInputTypes[index])
   ) {
     throw new Error(
       `Unexpected constructor signature: expected ${expectedInputTypes.join(", ")} but received ${inputTypes.join(", ") || "none"}.`
@@ -91,11 +100,25 @@ async function compileContract() {
     },
   };
 
-  const output = JSON.parse(solc.compile(JSON.stringify(input)));
-  const errors = (output.errors || []) as Array<{
-    severity: string;
-    formattedMessage: string;
-  }>;
+  const output = JSON.parse(solc.compile(JSON.stringify(input))) as {
+    errors?: Array<{
+      severity: string;
+      formattedMessage: string;
+    }>;
+    contracts?: {
+      [sourceName: string]: {
+        [contractName: string]: {
+          abi?: ContractConstructorAbi[];
+          evm?: {
+            bytecode?: {
+              object?: string;
+            };
+          };
+        };
+      };
+    };
+  };
+  const errors = output.errors || [];
   const fatalErrors = errors.filter((error) => error.severity === "error");
 
   if (fatalErrors.length > 0) {

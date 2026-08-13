@@ -2,62 +2,10 @@
  * TRON network utilities and constants.
  */
 
-declare global {
-  interface Window {
-    tronWeb?: TronWebLike;
-    tronLink?: {
-      tronWeb?: TronWebLike;
-      request?: (args: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
-    };
-  }
-}
-
 export enum TronNetwork {
   MAINNET = "TRON_MAINNET",
   NILE_TESTNET = "TRON_NILE",
 }
-
-type TronWebLike = {
-  defaultAddress?: {
-    base58?: string;
-    hex?: string;
-  };
-  fullNode?: {
-    host?: string;
-    fullHost?: string;
-  };
-  solidityNode?: {
-    host?: string;
-    fullHost?: string;
-  };
-  eventServer?: {
-    host?: string;
-    fullHost?: string;
-  };
-  defaultNode?: string;
-  fullHost?: string;
-  currentProviders?: () => {
-    fullNode?: { host?: string };
-    solidityNode?: { host?: string };
-    eventServer?: { host?: string };
-  };
-  isAddress?: (value: string) => boolean;
-  address?: {
-    fromHex: (value: string) => string;
-  };
-  trx?: {
-    getBalance?: (address: string) => Promise<unknown>;
-  };
-  contract?: () => {
-    new: (options: {
-      abi: unknown;
-      bytecode: string;
-      feeLimit: number;
-      callValue: number;
-      parameters: [string, string, string];
-    }) => Promise<unknown>;
-  };
-};
 
 export const TRON_NETWORK_CONFIG = {
   [TronNetwork.MAINNET]: {
@@ -67,7 +15,7 @@ export const TRON_NETWORK_CONFIG = {
     explorerUrl: "https://tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON MAINNET",
-    minimumRecommendedBalanceSun: 100_000_000n,
+    minimumRecommendedBalanceSun: BigInt(100_000_000),
   },
   [TronNetwork.NILE_TESTNET]: {
     name: "TRON Nile Testnet",
@@ -76,7 +24,7 @@ export const TRON_NETWORK_CONFIG = {
     explorerUrl: "https://nile.tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON NILE",
-    minimumRecommendedBalanceSun: 100_000_000n,
+    minimumRecommendedBalanceSun: BigInt(100_000_000),
   },
 } as const;
 
@@ -244,10 +192,10 @@ export async function getWalletBalanceSun(
 
 export function formatSunAsTrx(value: bigint | string | number): string {
   const sun = normalizeSunValue(value);
-  const sign = sun < 0n ? "-" : "";
-  const absolute = sun < 0n ? -sun : sun;
-  const whole = absolute / 1_000_000n;
-  const fraction = (absolute % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  const sign = sun < BigInt(0) ? "-" : "";
+  const absolute = sun < BigInt(0) ? -sun : sun;
+  const whole = absolute / BigInt(1_000_000);
+  const fraction = (absolute % BigInt(1_000_000)).toString().padStart(6, "0").replace(/0+$/, "");
 
   return fraction ? `${sign}${whole.toString()}.${fraction}` : `${sign}${whole.toString()}`;
 }

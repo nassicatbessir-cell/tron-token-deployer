@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import {
   createSafeUploadFilename,
@@ -82,17 +83,17 @@ function getGatewayBaseUrl() {
   return (process.env.PINATA_GATEWAY_BASE_URL || DEFAULT_GATEWAY_BASE_URL).replace(/\/$/, "");
 }
 
-function getPinataErrorMessage(data: any, fallback: string) {
+function getPinataErrorMessage(data: unknown, fallback: string) {
   if (!data || typeof data !== "object") {
     return fallback;
   }
 
-  if (typeof data.error === "string" && data.error.trim()) {
-    return data.error.trim();
+  if (typeof (data as { error?: unknown }).error === "string" && (data as { error: string }).error.trim()) {
+    return (data as { error: string }).error.trim();
   }
 
-  if (typeof data.message === "string" && data.message.trim()) {
-    return data.message.trim();
+  if (typeof (data as { message?: unknown }).message === "string" && (data as { message: string }).message.trim()) {
+    return (data as { message: string }).message.trim();
   }
 
   return fallback;
@@ -139,8 +140,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const filePart = await parseMultipartUploadRequest(request).catch((error: any) => {
-      throw new Error(`REQUEST_PARSE:${error?.message || "Could not parse multipart upload."}`);
+    const filePart = await parseMultipartUploadRequest(request).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Could not parse multipart upload.";
+      throw new Error(`REQUEST_PARSE:${message}`);
     });
 
     if (!ALLOWED_MIME_TYPES.has(filePart.mimeType)) {
@@ -183,7 +185,7 @@ export async function POST(request: Request) {
 
     const filename = createSafeUploadFilename(filePart.mimeType);
     const pinataForm = new FormData();
-    pinataForm.append("file", new Blob([filePart.data], { type: filePart.mimeType }), filename);
+    pinataForm.append("file", new Blob([Buffer.from(filePart.data)], { type: filePart.mimeType }), filename);
     pinataForm.append(
       "pinataMetadata",
       JSON.stringify({
@@ -202,7 +204,7 @@ export async function POST(request: Request) {
       signal: controller.signal,
     });
 
-    const data = await response.json().catch(() => null);
+    const data: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {
       return jsonError(
@@ -213,7 +215,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const ipfsHash = typeof data?.IpfsHash === "string" ? data.IpfsHash.trim() : "";
+    const ipfsHash = typeof (data as { IpfsHash?: unknown })?.IpfsHash === "string"
+      ? (data as { IpfsHash: string }).IpfsHash.trim()
+      : "";
 
     if (!CID_PATTERN.test(ipfsHash)) {
       return jsonError(
@@ -234,8 +238,8 @@ export async function POST(request: Request) {
       ipfsUrl: `ipfs://${ipfsHash}`,
       filename,
     });
-  } catch (error: any) {
-    const rawMessage = error?.message || "Error uploading logo.";
+  } catch (error: unknown) {
+    const rawMessage = error instanceof Error ? error.message : "Error uploading logo.";
 
     if (rawMessage.startsWith("REQUEST_PARSE:")) {
       return jsonError(
@@ -247,7 +251,7 @@ export async function POST(request: Request) {
     }
 
     const message =
-      error?.name === "AbortError"
+      error instanceof Error && error.name === "AbortError"
         ? "Logo upload request timed out before Pinata responded."
         : rawMessage;
 
