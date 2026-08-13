@@ -97,12 +97,12 @@ test("multipart parser preserves invalid MIME for later validation", async () =>
   assert.equal(parsed.mimeType, "text/plain");
 });
 
-test("pinata multipart body uses ascii-only filename and never embeds the original filename", () => {
+test("pinata multipart body uses ascii-only filename and never embeds the original filename", async () => {
   const multipart = buildPinataMultipartBody({
     fileBytes: PNG_BYTES,
     mimeType: "image/png",
   });
-  const multipartText = Buffer.from(multipart.body).toString("latin1");
+  const multipartText = Buffer.from(await multipart.body.arrayBuffer()).toString("latin1");
 
   assert.equal(multipart.filename, "logo.png");
   assert.match(multipartText, /filename="logo\.png"/);

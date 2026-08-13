@@ -12,6 +12,6 @@ export function buildPinataMultipartBody(input: {
   mimeType: string;
 }): {
   boundary: string;
-  body: Uint8Array;
+  body: Blob;
   filename: string;
 };
