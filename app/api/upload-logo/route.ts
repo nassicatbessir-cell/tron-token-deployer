@@ -1,6 +1,6 @@
-import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import {
+  buildPinataMultipartBody,
   createSafeUploadFilename,
   matchesImageMagicBytes,
   parseMultipartUploadRequest,
@@ -183,23 +183,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const filename = createSafeUploadFilename(filePart.mimeType);
-    const pinataForm = new FormData();
-    pinataForm.append("file", new Blob([Buffer.from(filePart.data)], { type: filePart.mimeType }), filename);
-    pinataForm.append(
-      "pinataMetadata",
-      JSON.stringify({
-        name: filename,
-      })
-    );
+    const safeFilename = createSafeUploadFilename(filePart.mimeType);
+    const pinataRequest = buildPinataMultipartBody({
+      fileBytes: filePart.data,
+      mimeType: filePart.mimeType,
+      filename: safeFilename,
+    });
 
     const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${jwt}`,
         Accept: "application/json",
+        "Content-Type": `multipart/form-data; boundary=${pinataRequest.boundary}`,
       },
-      body: pinataForm,
+      body: pinataRequest.body,
       cache: "no-store",
       signal: controller.signal,
     });
@@ -236,7 +234,7 @@ export async function POST(request: Request) {
       cid: ipfsHash,
       gatewayUrl: `${gatewayBaseUrl}/${ipfsHash}`,
       ipfsUrl: `ipfs://${ipfsHash}`,
-      filename,
+      filename: pinataRequest.filename,
     });
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : "Error uploading logo.";

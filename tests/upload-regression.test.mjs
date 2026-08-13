@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildPinataMultipartBody,
   createSafeUploadFilename,
   getMultipartBoundary,
   matchesImageMagicBytes,
@@ -95,4 +96,17 @@ test("multipart parser preserves invalid MIME for later validation", async () =>
   const parsed = await parseMultipartUploadRequest(request);
 
   assert.equal(parsed.mimeType, "text/plain");
+});
+
+test("pinata multipart body uses ascii-only filename for persian uploads", () => {
+  const multipart = buildPinataMultipartBody({
+    fileBytes: PNG_BYTES,
+    mimeType: "image/png",
+    filename: "لوگو تست.png",
+  });
+  const multipartText = multipart.body.toString("latin1");
+
+  assert.equal(multipart.filename, "logo.png");
+  assert.match(multipartText, /filename="logo\.png"/);
+  assert.doesNotMatch(multipartText, /لوگو/);
 });

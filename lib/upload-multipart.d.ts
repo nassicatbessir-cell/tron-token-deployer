@@ -9,3 +9,12 @@ export function parseMultipartUploadRequest(request: Request): Promise<{
   mimeType: string;
   data: Uint8Array;
 }>;
+export function buildPinataMultipartBody(input: {
+  fileBytes: Uint8Array;
+  mimeType: string;
+  filename: string;
+}): {
+  boundary: string;
+  body: Buffer;
+  filename: string;
+};
