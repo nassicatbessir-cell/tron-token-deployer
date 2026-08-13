@@ -416,9 +416,9 @@ export default function Home() {
         }
       }
 
-      const activeWallet = window.tronWeb?.defaultAddress?.base58 || "";
+      const activeWallet = tronWeb.defaultAddress?.base58 || "";
 
-      if (!isValidTronAddress(activeWallet, window.tronWeb)) {
+      if (!isValidTronAddress(activeWallet, tronWeb)) {
         throw new Error("Connected wallet address is invalid.");
       }
 
@@ -438,7 +438,7 @@ export default function Home() {
       setNetwork(activeNetwork);
 
       setStatus("Checking wallet balance for deployment fees...");
-      const balanceSun = await getWalletBalanceSun(window.tronWeb, activeWallet);
+      const balanceSun = await getWalletBalanceSun(tronWeb, activeWallet);
       const minimumBalance = TRON_NETWORK_CONFIG[activeNetwork].minimumRecommendedBalanceSun;
 
       if (balanceSun < minimumBalance) {
@@ -505,7 +505,7 @@ export default function Home() {
         throw new Error("Artifact constructor validation failed.");
       }
 
-      const walletBeforeDeploy = window.tronWeb?.defaultAddress?.base58 || "";
+      const walletBeforeDeploy = tronWeb.defaultAddress?.base58 || "";
       const networkBeforeDeploy = await detectTronNetwork();
 
       if (walletBeforeDeploy !== activeWallet) {
@@ -522,7 +522,7 @@ export default function Home() {
 
       setStatus("Waiting for TronLink confirmation...");
 
-      const deployedContract = await window.tronWeb?.contract?.().new({
+      const deployedContract = await tronWeb.contract?.().new({
         abi: artifact.abi,
         bytecode,
         feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
@@ -542,14 +542,14 @@ export default function Home() {
         deployedContractResult.address ||
         deployedContractResult._address ||
         deployedContractResult.options?.address;
-      const address = normalizeContractAddress(window.tronWeb, rawAddress);
+      const address = normalizeContractAddress(tronWeb, rawAddress);
       const txId =
         deployedContractResult.transaction?.txID ||
         deployedContractResult.transaction?.txId ||
         deployedContractResult.txID ||
         "";
 
-      if (!address || !isValidTronAddress(address, window.tronWeb)) {
+      if (!address || !isValidTronAddress(address, tronWeb)) {
         throw new Error("Deployment completed but a valid contract address was not returned.");
       }
 

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   buildPinataMultipartBody,
-  createSafeUploadFilename,
   matchesImageMagicBytes,
   parseMultipartUploadRequest,
 } from "@/lib/upload-multipart";
@@ -183,11 +182,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const safeFilename = createSafeUploadFilename(filePart.mimeType);
     const pinataRequest = buildPinataMultipartBody({
       fileBytes: filePart.data,
       mimeType: filePart.mimeType,
-      filename: safeFilename,
     });
 
     const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {

@@ -38,7 +38,7 @@ function createMultipartRequest({ filename, mimeType, bytes }) {
   });
 }
 
-test("safe upload filename is always ASCII and ignores original unicode name", () => {
+test("safe upload filename is always ASCII and derived only from mime type", () => {
   assert.equal(createSafeUploadFilename("image/png"), "logo.png");
   assert.equal(createSafeUploadFilename("image/jpeg"), "logo.jpg");
   assert.equal(createSafeUploadFilename("image/webp"), "logo.webp");
@@ -51,7 +51,7 @@ test("boundary parser extracts multipart boundary", () => {
   );
 });
 
-test("multipart parser accepts a Persian filename without requiring request.formData", async () => {
+test("multipart parser accepts a Persian filename without using request.formData", async () => {
   const request = createMultipartRequest({
     filename: "لوگو تست.png",
     mimeType: "image/png",
@@ -62,7 +62,6 @@ test("multipart parser accepts a Persian filename without requiring request.form
 
   assert.equal(parsed.fieldName, "file");
   assert.equal(parsed.mimeType, "image/png");
-  assert.ok(parsed.originalFilename.length > 0);
   assert.ok(parsed.data.byteLength > 0);
 });
 
@@ -76,7 +75,7 @@ test("multipart parser accepts filenames with spaces and emoji", async () => {
   const parsed = await parseMultipartUploadRequest(request);
 
   assert.equal(parsed.mimeType, "image/png");
-  assert.ok(parsed.originalFilename.length > 0);
+  assert.ok(parsed.data.byteLength > 0);
 });
 
 test("magic byte validation works for PNG, JPEG, and WebP", () => {
@@ -98,15 +97,16 @@ test("multipart parser preserves invalid MIME for later validation", async () =>
   assert.equal(parsed.mimeType, "text/plain");
 });
 
-test("pinata multipart body uses ascii-only filename for persian uploads", () => {
+test("pinata multipart body uses ascii-only filename and never embeds the original filename", () => {
   const multipart = buildPinataMultipartBody({
     fileBytes: PNG_BYTES,
     mimeType: "image/png",
-    filename: "لوگو تست.png",
   });
-  const multipartText = multipart.body.toString("latin1");
+  const multipartText = Buffer.from(multipart.body).toString("latin1");
 
   assert.equal(multipart.filename, "logo.png");
   assert.match(multipartText, /filename="logo\.png"/);
   assert.doesNotMatch(multipartText, /لوگو/);
+  assert.doesNotMatch(multipartText, /🚀/);
+  assert.doesNotMatch(multipartText, /test final/i);
 });
