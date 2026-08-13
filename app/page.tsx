@@ -46,6 +46,8 @@ type ArtifactResponse = {
   error?: string;
 };
 
+type StatusTone = "neutral" | "info" | "warning" | "error" | "success";
+
 const FEATURE_CARDS = [
   {
     title: "Network-safe deploy flow",
@@ -173,6 +175,7 @@ export default function Home() {
   const [logoPreview, setLogoPreview] = useState("");
   const [wallet, setWallet] = useState("");
   const [status, setStatus] = useState("");
+  const [statusTone, setStatusTone] = useState<StatusTone>("neutral");
   const [network, setNetwork] = useState<TronNetwork | null>(null);
   const [result, setResult] = useState<DeployResult | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -185,6 +188,11 @@ export default function Home() {
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
   const [twitter, setTwitter] = useState("");
+
+  const setDeploymentStatus = (message: string, tone: StatusTone = "info") => {
+    setStatus(message);
+    setStatusTone(tone);
+  };
 
   const networkLabel = useMemo(() => {
     if (!network) {
@@ -239,6 +247,7 @@ export default function Home() {
   const connectWallet = async () => {
     try {
       setIsConnecting(true);
+      setDeploymentStatus("Connecting wallet...", "info");
       const tronLink = window.tronLink;
 
       if (!tronLink?.request) {
@@ -265,14 +274,18 @@ export default function Home() {
 
       setWallet(connectedAddress);
       setNetwork(detectedNetwork);
-      setStatus(
+      setDeploymentStatus(
         detectedNetwork
           ? `Wallet connected on ${TRON_NETWORK_CONFIG[detectedNetwork].displayName}.`
-          : "Wallet connected, but the TRON network could not be detected."
+          : "Wallet connected, but the TRON network could not be detected.",
+        detectedNetwork ? "success" : "warning"
       );
       return true;
     } catch (error: unknown) {
-      setStatus(error instanceof Error ? error.message : "Wallet connection failed.");
+      setDeploymentStatus(
+        error instanceof Error ? error.message : "Wallet connection failed.",
+        "error"
+      );
       return false;
     } finally {
       setIsConnecting(false);
@@ -302,7 +315,7 @@ export default function Home() {
   const copy = async (value: string) => {
     if (!value) return;
     await navigator.clipboard.writeText(value);
-    setStatus("Copied to clipboard.");
+    setDeploymentStatus("Copied to clipboard.", "success");
   };
 
   const validateForm = (): ValidationResult => {
@@ -366,33 +379,37 @@ export default function Home() {
     }
   }, [tokenName, symbol, supply, description, website, telegram, twitter, logoFile]);
 
-  const deployDisabledReason = useMemo(() => {
+  const deployHint = useMemo(() => {
     if (isDeploying) {
-      return "Deployment is already running.";
+      return "Deployment is running.";
     }
 
-    if (!wallet) {
-      return "Connect TronLink before deploying.";
-    }
-
-    if (!network) {
-      return "Open the dApp on a detected TRON network before deploying.";
-    }
-
-    if (!isSupportedNetwork(network, SUPPORTED_NETWORKS)) {
-      return "The connected TRON network is not supported for deployment.";
+    if (isConnecting) {
+      return "Wallet connection is running.";
     }
 
     if (validationMessage) {
       return validationMessage;
     }
 
-    return "";
-  }, [isDeploying, wallet, network, validationMessage]);
+    if (!wallet) {
+      return "Click deploy to connect TronLink, or connect the wallet first.";
+    }
+
+    if (!network) {
+      return "Click deploy to re-check the connected TRON network.";
+    }
+
+    if (!isSupportedNetwork(network, SUPPORTED_NETWORKS)) {
+      return "The connected TRON network is not supported for deployment.";
+    }
+
+    return "Deployment will validate the wallet, network, balance, and artifact before asking TronLink to sign.";
+  }, [isDeploying, isConnecting, validationMessage, wallet, network]);
 
   const handleDeploy = async () => {
-    if (deployDisabledReason) {
-      setStatus(deployDisabledReason);
+    if (isDeploying) {
+      setDeploymentStatus("Deployment is already running.", "warning");
       return;
     }
 
@@ -400,6 +417,7 @@ export default function Home() {
       setIsDeploying(true);
       setResult(null);
 
+      setDeploymentStatus("Preparing deployment...", "info");
       const validated = validateForm();
       const tronWeb = window.tronWeb;
 
@@ -408,7 +426,6 @@ export default function Home() {
       }
 
       if (!tronWeb.defaultAddress?.base58) {
-        setStatus("Connecting wallet...");
         const connected = await connectWallet();
 
         if (!connected || !window.tronWeb?.defaultAddress?.base58) {
@@ -422,7 +439,7 @@ export default function Home() {
         throw new Error("Connected wallet address is invalid.");
       }
 
-      setStatus("Detecting active TRON network...");
+      setDeploymentStatus("Checking network...", "info");
       const activeNetwork = await detectTronNetwork();
 
       if (!activeNetwork) {
@@ -432,18 +449,31 @@ export default function Home() {
       }
 
       if (!isSupportedNetwork(activeNetwork, SUPPORTED_NETWORKS)) {
-        throw new Error("Deployment is disabled on the connected TRON network.");
+        throw new Error(
+          `Deployment is disabled on ${TRON_NETWORK_CONFIG[activeNetwork].displayName}.`
+        );
       }
 
       setNetwork(activeNetwork);
 
-      setStatus("Checking wallet balance for deployment fees...");
+      setDeploymentStatus("Checking TRX balance...", "info");
       const balanceSun = await getWalletBalanceSun(tronWeb, activeWallet);
-      const minimumBalance = TRON_NETWORK_CONFIG[activeNetwork].minimumRecommendedBalanceSun;
+      const minimumRecommendedBalance =
+        TRON_NETWORK_CONFIG[activeNetwork].minimumRecommendedBalanceSun;
+      const estimatedFeeLimit = BigInt(TRON_NETWORK_CONFIG[activeNetwork].feeLimit);
 
-      if (balanceSun < minimumBalance) {
+      if (balanceSun <= BigInt(0)) {
         throw new Error(
-          `Wallet balance is too low for a reliable deployment. Keep at least ${formatSunAsTrx(minimumBalance)} TRX available.`
+          `Insufficient TRX balance on ${TRON_NETWORK_CONFIG[activeNetwork].displayName}. Current balance: ${formatSunAsTrx(
+            balanceSun
+          )} TRX. Recommended balance: ${formatSunAsTrx(minimumRecommendedBalance)} TRX.`
+        );
+      }
+
+      if (balanceSun < minimumRecommendedBalance) {
+        setDeploymentStatus(
+          `Current balance is ${formatSunAsTrx(balanceSun)} TRX on ${TRON_NETWORK_CONFIG[activeNetwork].displayName}. Deployment can continue, but the recommended balance is ${formatSunAsTrx(minimumRecommendedBalance)} TRX and the configured fee limit is ${formatSunAsTrx(estimatedFeeLimit)} TRX.`,
+          "warning"
         );
       }
 
@@ -455,7 +485,7 @@ export default function Home() {
       };
 
       if (logoFile) {
-        setStatus("Uploading logo to IPFS...");
+        setDeploymentStatus("Uploading logo to IPFS...", "info");
         const uploadResult = await uploadLogoWithRetry(logoFile);
 
         if (!uploadResult.success || !uploadResult.cid || !uploadResult.gatewayUrl) {
@@ -469,7 +499,7 @@ export default function Home() {
         };
       }
 
-      setStatus("Creating token metadata payload...");
+      setDeploymentStatus("Preparing deployment...", "info");
       const metadataPayload = {
         name: validated.name,
         symbol: validated.symbol,
@@ -487,7 +517,7 @@ export default function Home() {
         deployerAddress: activeWallet,
       };
 
-      setStatus("Fetching contract artifact...");
+      setDeploymentStatus("Fetching contract artifact...", "info");
       const artifactRes = await fetch("/api/token-artifact", {
         cache: "no-store",
       });
@@ -520,7 +550,7 @@ export default function Home() {
         ? artifact.bytecode
         : `0x${artifact.bytecode}`;
 
-      setStatus("Waiting for TronLink confirmation...");
+      setDeploymentStatus("Waiting for confirmation...", "info");
 
       const deployedContract = await tronWeb.contract?.().new({
         abi: artifact.abi,
@@ -553,7 +583,7 @@ export default function Home() {
         throw new Error("Deployment completed but a valid contract address was not returned.");
       }
 
-      setStatus("Submitting token metadata...");
+      setDeploymentStatus("Deploying contract...", "info");
       let metadataMessage = "Token deployed successfully.";
 
       try {
@@ -594,10 +624,10 @@ export default function Home() {
         totalSupplyBaseUnits,
       });
 
-      setStatus("Deployment completed successfully.");
+      setDeploymentStatus("Deployment successful.", "success");
     } catch (error: unknown) {
       console.error(error);
-      setStatus(mapDeployError(error));
+      setDeploymentStatus(mapDeployError(error), "error");
     } finally {
       setIsDeploying(false);
     }
@@ -788,15 +818,15 @@ export default function Home() {
             className="deployButton"
             type="button"
             onClick={handleDeploy}
-            disabled={Boolean(deployDisabledReason)}
+            disabled={isDeploying}
           >
             {isDeploying ? "DEPLOYING TOKEN" : "DEPLOY TOKEN"}
             <span>↗</span>
           </button>
 
-          {deployDisabledReason && <div className="hint">{deployDisabledReason}</div>}
+          <div className="hint">{deployHint}</div>
 
-          <div className="status">
+          <div className={`status status-${statusTone}`}>
             <span />
             {status || "READY FOR DEPLOYMENT"}
           </div>
@@ -1052,6 +1082,27 @@ export default function Home() {
           margin-right: 7px;
         }
 
+        .status-error span {
+          background: #ff4d6d;
+          box-shadow: 0 0 10px #ff4d6d;
+        }
+
+        .status-warning span {
+          background: #ffcc4d;
+          box-shadow: 0 0 10px #ffcc4d;
+        }
+
+        .status-success span {
+          background: #37df88;
+          box-shadow: 0 0 10px #37df88;
+        }
+
+        .status-info span,
+        .status-neutral span {
+          background: #6b8dff;
+          box-shadow: 0 0 10px #6b8dff;
+        }
+
         .hero {
           min-height: 650px;
           display: grid;
@@ -1247,6 +1298,7 @@ export default function Home() {
           color: #aab2c3;
           font-size: 11px;
           line-height: 1.6;
+          min-height: 34px;
         }
 
         .status {
@@ -1254,8 +1306,25 @@ export default function Home() {
           text-align: center;
           min-height: 18px;
           color: #697286;
-          font-size: 9px;
-          line-height: 1.6;
+          font-size: 10px;
+          line-height: 1.7;
+        }
+
+        .status-error {
+          color: #ff93a7;
+        }
+
+        .status-warning {
+          color: #ffd36b;
+        }
+
+        .status-success {
+          color: #8bf1ba;
+        }
+
+        .status-info,
+        .status-neutral {
+          color: #9cb3ff;
         }
 
         .projects {
