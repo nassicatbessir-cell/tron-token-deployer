@@ -321,6 +321,11 @@
           display: none;
         }
 
+        .upload.hasFile {
+          border-color: rgba(66, 229, 150, 0.45);
+          color: #7ef0b5;
+        }
+
         .deployButton,
         .scanButton {
           width: 100%;
@@ -356,8 +361,46 @@
           text-align: center;
           min-height: 18px;
           color: #697286;
-          font-size: 9px;
+          font-size: 11px;
           line-height: 1.6;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .status.isError {
+          color: #ff8ea8;
+          background: rgba(255, 23, 77, 0.1);
+          border-color: rgba(255, 23, 77, 0.35);
+        }
+
+        .status.isSuccess {
+          color: #7ef0b5;
+          background: rgba(66, 229, 150, 0.08);
+          border-color: rgba(66, 229, 150, 0.3);
+        }
+
+        .status span {
+          vertical-align: middle;
+        }
+
+        .walletBanner {
+          margin: 0 0 16px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 180, 60, 0.45);
+          background: rgba(255, 160, 40, 0.1);
+          color: #ffd28a;
+          font-size: 12px;
+          line-height: 1.65;
+        }
+
+        .walletBanner strong {
+          display: block;
+          margin-bottom: 6px;
+          color: #ffe0a8;
+          letter-spacing: 0.04em;
         }
 
         .projects {
