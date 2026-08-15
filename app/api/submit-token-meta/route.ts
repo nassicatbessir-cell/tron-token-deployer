@@ -350,7 +350,7 @@ export async function POST(request: Request) {
       symbol: symbol.trim().toUpperCase(),
       description: String(description || "").trim(),
       decimals: normalizedDecimals,
-      totalSupply: totalSupply,
+      totalSupply: normalizedSupply,
       totalSupplyBaseUnits: normalizedBaseUnits,
       logoIpfsHash: String(logoIpfsHash || "").trim(),
       logoCid: normalizedLogoCid,
