@@ -97,11 +97,12 @@ export async function uploadLogoWithRetry(
       }
 
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string };
       if (attempt === retries) {
         return {
           success: false,
-          error: error?.message || `Upload failed after ${retries} attempts`,
+          error: err?.message || `Upload failed after ${retries} attempts`,
         };
       }
 
@@ -182,8 +183,9 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
       originalFilename: file.name,
       status: response.status,
     };
-  } catch (error: any) {
-    if (error?.name === "AbortError") {
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string };
+    if (err?.name === "AbortError") {
       return {
         success: false,
         error: "Upload timed out. Please try again.",
@@ -194,9 +196,9 @@ async function uploadLogoToIPFS(file: File): Promise<UploadResult> {
     return {
       success: false,
       error:
-        error?.message === "Failed to fetch"
+        err?.message === "Failed to fetch"
           ? "Logo upload request failed before the server responded."
-          : error?.message || "Unknown upload error",
+          : err?.message || "Unknown upload error",
       status: 0,
     };
   } finally {
@@ -221,10 +223,13 @@ export function generateFallbackLogoMetadata(tokenSymbol: string) {
 /**
  * Validate logo metadata.
  */
-export function isValidLogoMetadata(metadata: any): boolean {
+export function isValidLogoMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") {
+    return false;
+  }
+  const m = metadata as Record<string, unknown>;
   return Boolean(
-    metadata &&
-      (metadata.ipfsHash || metadata.cid || metadata.gatewayUrl) &&
-      (metadata.gatewayUrl || metadata.ipfsUrl)
+    (m.ipfsHash || m.cid || m.gatewayUrl) &&
+      (m.gatewayUrl || m.ipfsUrl)
   );
 }
