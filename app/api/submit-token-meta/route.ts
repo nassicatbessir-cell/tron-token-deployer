@@ -120,13 +120,14 @@ async function submitToMetaBridge(
       status: data?.status || "pending",
       message: data?.message || "Token metadata submitted successfully.",
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string };
     return {
       success: false,
       message:
-        error?.name === "AbortError"
+        err?.name === "AbortError"
           ? "Meta API request timed out."
-          : error?.message || "Error submitting to Meta API.",
+          : err?.message || "Error submitting to Meta API.",
     };
   } finally {
     clearTimeout(timeoutId);
@@ -349,7 +350,7 @@ export async function POST(request: Request) {
       symbol: symbol.trim().toUpperCase(),
       description: String(description || "").trim(),
       decimals: normalizedDecimals,
-      totalSupply: normalizedSupply,
+      totalSupply: totalSupply,
       totalSupplyBaseUnits: normalizedBaseUnits,
       logoIpfsHash: String(logoIpfsHash || "").trim(),
       logoCid: normalizedLogoCid,
@@ -367,11 +368,12 @@ export async function POST(request: Request) {
     return noStoreJson(result, {
       status: result.success ? 200 : 400,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { message?: string };
     return noStoreJson(
       {
         success: false,
-        message: error?.message || "Error processing token submission.",
+        message: err?.message || "Error processing token submission.",
       },
       { status: 500 }
     );
