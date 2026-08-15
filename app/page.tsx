@@ -180,9 +180,9 @@ function mapDeployError(error: unknown) {
 
 function isErrorStatus(message: string) {
   if (!message) return false;
-  return /(
-    failed|error|not detected|insufficient|invalid|required|disabled|rejected|denied|timeout|could not|missing|not supported|not configured
-  )/i.test(message);
+  return /failed|error|not detected|insufficient|invalid|required|disabled|rejected|denied|timeout|could not|missing|not supported|not configured/i.test(
+    message
+  );
 }
 
 function isSuccessStatus(message: string) {
