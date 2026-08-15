@@ -16,7 +16,8 @@
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tronweb": "^6.4.0"
+    "tronweb": "^6.4.0",
+    "solc": "^0.8.36"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -25,7 +26,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
-    "solc": "^0.8.36",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
