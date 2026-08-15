@@ -76,17 +76,19 @@ function sanitizeFilename(originalName: string, mimeType: string) {
   return `${safeBaseName}.${extension}`;
 }
 
-function getPinataErrorMessage(data: any, fallback: string) {
+function getPinataErrorMessage(data: unknown, fallback: string) {
   if (!data || typeof data !== "object") {
     return fallback;
   }
 
-  if (typeof data.error === "string" && data.error.trim()) {
-    return data.error.trim();
+  const record = data as Record<string, unknown>;
+
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error.trim();
   }
 
-  if (typeof data.message === "string" && data.message.trim()) {
-    return data.message.trim();
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message.trim();
   }
 
   return fallback;
@@ -265,11 +267,12 @@ export async function POST(request: Request) {
       ipfsUrl: `ipfs://${ipfsHash}`,
       filename,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string };
     const message =
-      error?.name === "AbortError"
+      err?.name === "AbortError"
         ? "Logo upload request timed out before Pinata responded."
-        : error?.message || "Error uploading logo.";
+        : err?.message || "Error uploading logo.";
 
     return noStoreJson(
       {
