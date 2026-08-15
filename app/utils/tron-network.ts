@@ -2,16 +2,6 @@
  * TRON network utilities and constants.
  */
 
-declare global {
-  interface Window {
-    tronWeb?: TronWebLike;
-    tronLink?: {
-      tronWeb?: TronWebLike;
-      request?: (args: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
-    };
-  }
-}
-
 export enum TronNetwork {
   MAINNET = "TRON_MAINNET",
   NILE_TESTNET = "TRON_NILE",

@@ -25,9 +25,9 @@ function noStoreJson(body: unknown, init?: ResponseInit) {
   });
 }
 
-function assertExpectedConstructor(abi: any) {
+function assertExpectedConstructor(abi: unknown) {
   const constructorItem = Array.isArray(abi)
-    ? abi.find((item) => item?.type === "constructor")
+    ? (abi as Array<{ type?: string; inputs?: Array<{ type?: string }> }>).find((item) => item?.type === "constructor")
     : null;
 
   if (!constructorItem) {
@@ -35,14 +35,14 @@ function assertExpectedConstructor(abi: any) {
   }
 
   const inputTypes = Array.isArray(constructorItem.inputs)
-    ? constructorItem.inputs.map((input: any) => input?.type)
+    ? constructorItem.inputs.map((input) => input?.type)
     : [];
 
   const expectedInputTypes = ["string", "string", "uint256"];
 
   if (
     inputTypes.length !== expectedInputTypes.length ||
-    inputTypes.some((type, index) => type !== expectedInputTypes[index])
+    inputTypes.some((type: string | undefined, index: number) => type !== expectedInputTypes[index])
   ) {
     throw new Error(
       `Unexpected constructor signature: expected ${expectedInputTypes.join(", ")} but received ${inputTypes.join(", ") || "none"}.`
@@ -132,7 +132,7 @@ export async function GET() {
       constructorAbi: artifact.constructorAbi,
       sourceHash: artifact.sourceHash,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Contract artifact generation error:", error);
 
     return noStoreJson(
