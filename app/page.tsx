@@ -118,7 +118,10 @@ function validateOptionalHttpsUrl(value: string, label: string) {
   return parsedUrl.toString();
 }
 
-function normalizeContractAddress(tronWeb: { address?: { fromHex: (value: string) => string } } | undefined, value: string | undefined) {
+function normalizeContractAddress(
+  tronWeb: { address?: { fromHex: (value: string) => string } } | undefined,
+  value: string | undefined
+) {
   if (!value) {
     return "";
   }
@@ -168,7 +171,23 @@ function mapDeployError(error: unknown) {
     return "Artifact or metadata request failed before the server responded.";
   }
 
+  if (/PINATA_JWT/i.test(message)) {
+    return "Logo upload failed: PINATA_JWT is not configured on the server.";
+  }
+
   return message;
+}
+
+function isErrorStatus(message: string) {
+  if (!message) return false;
+  return /(
+    failed|error|not detected|insufficient|invalid|required|disabled|rejected|denied|timeout|could not|missing|not supported|not configured
+  )/i.test(message);
+}
+
+function isSuccessStatus(message: string) {
+  if (!message) return false;
+  return /(connected|completed successfully|copied|ready for deployment)/i.test(message);
 }
 
 export default function Home() {
@@ -180,6 +199,7 @@ export default function Home() {
   const [result, setResult] = useState<DeployResult | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [tronLinkDetected, setTronLinkDetected] = useState(false);
 
   const [tokenName, setTokenName] = useState("MyToken");
   const [symbol, setSymbol] = useState("MTK");
@@ -201,6 +221,12 @@ export default function Home() {
     let active = true;
 
     const syncWallet = async () => {
+      const hasTronLink = Boolean(window.tronLink?.request || window.tronWeb);
+
+      if (active) {
+        setTronLinkDetected(hasTronLink);
+      }
+
       const tronWeb = window.tronWeb;
 
       if (!active) {
@@ -245,7 +271,9 @@ export default function Home() {
       const tronLink = window.tronLink;
 
       if (!tronLink?.request) {
-        throw new Error("TronLink was not detected. Open this page inside TronLink.");
+        throw new Error(
+          "TronLink was not detected. On mobile, open this page inside the TronLink app browser (DApp browser). On desktop, install the TronLink extension."
+        );
       }
 
       await tronLink.request({
@@ -255,7 +283,7 @@ export default function Home() {
       const tronWeb = window.tronWeb;
 
       if (!tronWeb?.defaultAddress?.base58) {
-        throw new Error("Wallet connection was not completed.");
+        throw new Error("Wallet connection was not completed. Approve the request in TronLink.");
       }
 
       const connectedAddress = tronWeb.defaultAddress.base58;
@@ -268,6 +296,7 @@ export default function Home() {
 
       setWallet(connectedAddress);
       setNetwork(detectedNetwork);
+      setTronLinkDetected(true);
       setStatus(
         detectedNetwork
           ? `Wallet connected on ${TRON_NETWORK_CONFIG[detectedNetwork].displayName}.`
@@ -292,10 +321,26 @@ export default function Home() {
 
     if (!file) {
       setLogoPreview("");
+      setStatus("Logo removed.");
+      return;
+    }
+
+    if (!SUPPORTED_LOGO_TYPES.has(file.type)) {
+      setLogoFile(null);
+      setLogoPreview("");
+      setStatus("Logo must be a PNG, JPEG, or WebP image.");
+      return;
+    }
+
+    if (file.size > MAX_LOGO_SIZE_MB * 1024 * 1024) {
+      setLogoFile(null);
+      setLogoPreview("");
+      setStatus(`Logo must be ${MAX_LOGO_SIZE_MB}MB or smaller.`);
       return;
     }
 
     setLogoPreview(URL.createObjectURL(file));
+    setStatus(`Logo selected: ${file.name}`);
   };
 
   const shorten = (value: string) => {
@@ -409,7 +454,9 @@ export default function Home() {
       const tronWeb = window.tronWeb;
 
       if (!tronWeb) {
-        throw new Error("TronLink was not detected. Open this page inside TronLink.");
+        throw new Error(
+          "TronLink was not detected. Open this page inside the TronLink app browser."
+        );
       }
 
       if (!tronWeb.defaultAddress?.base58) {
@@ -545,15 +592,10 @@ export default function Home() {
         txID?: string;
       } | null;
       const rawAddress =
-        deployed?.address ||
-        deployed?._address ||
-        deployed?.options?.address;
+        deployed?.address || deployed?._address || deployed?.options?.address;
       const address = normalizeContractAddress(window.tronWeb, rawAddress);
       const txId =
-        deployed?.transaction?.txID ||
-        deployed?.transaction?.txId ||
-        deployed?.txID ||
-        "";
+        deployed?.transaction?.txID || deployed?.transaction?.txId || deployed?.txID || "";
 
       if (!address || !isValidTronAddress(address, window.tronWeb)) {
         throw new Error("Deployment completed but a valid contract address was not returned.");
@@ -582,10 +624,12 @@ export default function Home() {
             ? `Token deployed. Metadata submission failed: ${metaJson.message}`
             : "Token deployed. Metadata submission failed.";
         } else {
-          metadataMessage = metaJson?.message || "Token deployed and metadata submitted successfully.";
+          metadataMessage =
+            metaJson?.message || "Token deployed and metadata submitted successfully.";
         }
       } catch {
-        metadataMessage = "Token deployed. Metadata submission request failed before the server responded.";
+        metadataMessage =
+          "Token deployed. Metadata submission request failed before the server responded.";
       }
 
       setResult({
@@ -608,6 +652,12 @@ export default function Home() {
       setIsDeploying(false);
     }
   };
+
+  const statusClass = isErrorStatus(status)
+    ? "status isError"
+    : isSuccessStatus(status)
+      ? "status isSuccess"
+      : "status";
 
   return (
     <main className="launchpad">
@@ -691,6 +741,15 @@ export default function Home() {
               READY
             </div>
           </div>
+
+          {!tronLinkDetected && !wallet && (
+            <div className="walletBanner">
+              <strong>TronLink not detected</strong>
+              On mobile: open this page inside the TronLink app (DApp / Browser tab).
+              On desktop: install the TronLink browser extension, then refresh.
+              Regular mobile browsers cannot connect a TRON wallet.
+            </div>
+          )}
 
           <div className="logoBox">
             {logoPreview ? (
@@ -780,8 +839,8 @@ export default function Home() {
             />
           </label>
 
-          <label className="upload">
-            <span>{logoFile ? logoFile.name : "SELECT TOKEN LOGO"}</span>
+          <label className={`upload${logoFile ? " hasFile" : ""}`}>
+            <span>{logoFile ? `✓ ${logoFile.name}` : "SELECT TOKEN LOGO"}</span>
 
             <input
               type="file"
@@ -804,7 +863,7 @@ export default function Home() {
             <div className="hint">{deployDisabledReason}</div>
           )}
 
-          <div className="status">
+          <div className={statusClass}>
             <span />
             {status || "READY FOR DEPLOYMENT"}
           </div>
