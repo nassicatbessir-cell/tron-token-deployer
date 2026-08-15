@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run build",
+    "test:upload": "node tests/logo-upload.test.mjs",
+    "test": "npm run test:upload"
   },
   "dependencies": {
     "next": "16.3.0",

@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - improve-production-readiness
+      - fix/production-hardening-and-types
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +35,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Unit smoke tests
+        run: npm run test:upload
 
       - name: Build
         env:
