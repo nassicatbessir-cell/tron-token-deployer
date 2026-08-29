@@ -187,7 +187,7 @@ export async function POST(request: Request) {
 
     const filename = createSafeUploadFilename(filePart.mimeType);
     const pinataForm = new FormData();
-    pinataForm.append("file", new Blob([filePart.data], { type: filePart.mimeType }), filename);
+    pinataForm.append("file", new Blob([new Uint8Array(filePart.data).buffer], { type: filePart.mimeType }), filename);
     pinataForm.append(
       "pinataMetadata",
       JSON.stringify({
