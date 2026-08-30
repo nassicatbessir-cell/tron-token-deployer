@@ -32,6 +32,7 @@ type ValidationResult = {
   name: string;
   symbol: string;
   supply: string;
+  decimals: number;
   description: string;
   website: string;
   telegram: string;
@@ -147,10 +148,11 @@ function isExpectedConstructor(artifact: ArtifactResponse) {
     : [];
 
   return (
-    inputTypes.length === 3 &&
+    inputTypes.length === 4 &&
     inputTypes[0] === "string" &&
     inputTypes[1] === "string" &&
-    inputTypes[2] === "uint256"
+    inputTypes[2] === "uint256" &&
+    inputTypes[3] === "uint8"
   );
 }
 
@@ -204,6 +206,7 @@ export default function Home() {
   const [tokenName, setTokenName] = useState("MyToken");
   const [symbol, setSymbol] = useState("MTK");
   const [supply, setSupply] = useState("1000000");
+  const [decimals, setDecimals] = useState("6");
   const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
@@ -355,6 +358,16 @@ export default function Home() {
   };
 
   const validateForm = (): ValidationResult => {
+    const normalizedDecimals = Number.parseInt(decimals, 10);
+
+    if (
+      !Number.isInteger(normalizedDecimals) ||
+      normalizedDecimals < 0 ||
+      normalizedDecimals > 18
+    ) {
+      throw new Error("DECIMALS must be an integer between 0 and 18.");
+    }
+
     const normalizedName = tokenName.trim();
     const normalizedSymbol = symbol.trim().toUpperCase();
     const normalizedSupply = supply.trim();
@@ -381,8 +394,13 @@ export default function Home() {
       throw new Error("Initial supply must be greater than zero.");
     }
 
-    if (normalizedSupplyBigInt > MAX_CONTRACT_SUPPLY) {
-      throw new Error("Initial supply exceeds the contract limit for 6 decimals.");
+    const maxContractSupply =
+      MAX_UINT256 / 10n ** BigInt(normalizedDecimals);
+
+    if (normalizedSupplyBigInt > maxContractSupply) {
+      throw new Error(
+        `Initial supply exceeds the contract limit for ${normalizedDecimals} decimals.`
+      );
     }
 
     if (logoFile) {
@@ -399,6 +417,7 @@ export default function Home() {
       name: normalizedName,
       symbol: normalizedSymbol,
       supply: normalizedSupply,
+      decimals: normalizedDecimals,
       description: description.trim(),
       website: validateOptionalHttpsUrl(website, "Website"),
       telegram: validateOptionalHttpsUrl(telegram, "Telegram"),
@@ -501,7 +520,7 @@ export default function Home() {
         );
       }
 
-      const totalSupplyBaseUnits = expandTokenAmountToBaseUnits(validated.supply, TOKEN_DECIMALS);
+      const totalSupplyBaseUnits = expandTokenAmountToBaseUnits(validated.supply, BigInt(validated.decimals));
       let logoMetadata = {
         cid: "",
         gatewayUrl: "",
@@ -528,7 +547,7 @@ export default function Home() {
         name: validated.name,
         symbol: validated.symbol,
         description: validated.description,
-        decimals: Number(TOKEN_DECIMALS),
+        decimals: validated.decimals,
         totalSupply: validated.supply,
         totalSupplyBaseUnits,
         logoIpfsHash: logoMetadata.cid,
@@ -581,7 +600,7 @@ export default function Home() {
         bytecode,
         feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
         callValue: 0,
-        parameters: [validated.name, validated.symbol, validated.supply, Number(TOKEN_DECIMALS)],
+        parameters: [validated.name, validated.symbol, validated.supply, validated.decimals],
       });
 
       const deployed = deployedContract as {
@@ -796,7 +815,20 @@ export default function Home() {
           <div className="twoColumns">
             <label>
               DECIMALS
-              <input value={TOKEN_DECIMALS.toString()} readOnly />
+              <input
+                type="number"
+                min="0"
+                max="18"
+                step="1"
+                value={decimals}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (/^\\d{0,2}$/.test(value)) {
+                    setDecimals(value);
+                  }
+                }}
+                inputMode="numeric"
+              />
             </label>
 
             <label>
