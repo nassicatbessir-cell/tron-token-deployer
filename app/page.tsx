@@ -224,20 +224,20 @@ export default function Home() {
     let active = true;
 
     const syncWallet = async () => {
-      const hasTronLink = Boolean(window.tronLink?.request || window.tronWeb);
-
-      if (active) {
-        setTronLinkDetected(hasTronLink);
-      }
-
+      const tronLink = window.tronLink;
       const tronWeb = window.tronWeb;
+      const hasTronLink = Boolean(tronLink?.request || tronWeb);
 
       if (!active) {
         return;
       }
 
-      if (tronWeb?.defaultAddress?.base58) {
-        setWallet(tronWeb.defaultAddress.base58);
+      setTronLinkDetected(hasTronLink);
+
+      const address = tronWeb?.defaultAddress?.base58 || "";
+
+      if (address && isValidTronAddress(address, tronWeb)) {
+        setWallet(address);
       } else {
         setWallet("");
       }
@@ -249,14 +249,78 @@ export default function Home() {
       }
     };
 
+    const handleAccountsChanged = async () => {
+      if (!active) {
+        return;
+      }
+
+      setStatus("Wallet account changed. Verifying the active TronLink account...");
+
+      await syncWallet();
+
+      if (active && window.tronWeb?.defaultAddress?.base58) {
+        setStatus("Wallet account updated successfully.");
+      }
+    };
+
+    const handleChainChanged = async () => {
+      if (!active) {
+        return;
+      }
+
+      setStatus("TRON network changed. Verifying the active network...");
+
+      await syncWallet();
+
+      if (active) {
+        const detected = await detectTronNetwork();
+
+        if (detected) {
+          setStatus(
+            `Network changed to ${TRON_NETWORK_CONFIG[detected].displayName}.`
+          );
+        } else {
+          setStatus("Network changed, but the active TRON network could not be verified.");
+        }
+      }
+    };
+
+    const handleDisconnect = () => {
+      if (!active) {
+        return;
+      }
+
+      setWallet("");
+      setNetwork(null);
+      setStatus("TronLink wallet disconnected.");
+    };
+
     void syncWallet();
-    const timer = window.setInterval(() => {
-      void syncWallet();
-    }, 2000);
+
+    window.addEventListener("accountsChanged", handleAccountsChanged);
+    window.addEventListener("chainChanged", handleChainChanged);
+    window.addEventListener("disconnect", handleDisconnect);
+
+    const tronLink = window.tronLink;
+
+    if (tronLink?.on) {
+      tronLink.on("accountsChanged", handleAccountsChanged);
+      tronLink.on("chainChanged", handleChainChanged);
+      tronLink.on("disconnect", handleDisconnect);
+    }
 
     return () => {
       active = false;
-      window.clearInterval(timer);
+
+      window.removeEventListener("accountsChanged", handleAccountsChanged);
+      window.removeEventListener("chainChanged", handleChainChanged);
+      window.removeEventListener("disconnect", handleDisconnect);
+
+      if (tronLink?.removeListener) {
+        tronLink.removeListener("accountsChanged", handleAccountsChanged);
+        tronLink.removeListener("chainChanged", handleChainChanged);
+        tronLink.removeListener("disconnect", handleDisconnect);
+      }
     };
   }, []);
 
