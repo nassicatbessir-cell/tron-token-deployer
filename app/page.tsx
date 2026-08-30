@@ -67,7 +67,7 @@ const FEATURE_CARDS = [
 ];
 
 const SUPPORTED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const TOKEN_DECIMALS = 18n;
+const TOKEN_DECIMALS = 6n;
 const DEFAULT_MAX_LOGO_SIZE_MB = 5;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_CONTRACT_SUPPLY = MAX_UINT256 / 10n ** TOKEN_DECIMALS;
@@ -382,7 +382,7 @@ export default function Home() {
     }
 
     if (normalizedSupplyBigInt > MAX_CONTRACT_SUPPLY) {
-      throw new Error("Initial supply exceeds the contract limit for 18 decimals.");
+      throw new Error("Initial supply exceeds the contract limit for 6 decimals.");
     }
 
     if (logoFile) {
@@ -581,7 +581,7 @@ export default function Home() {
         bytecode,
         feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
         callValue: 0,
-        parameters: [validated.name, validated.symbol, validated.supply],
+        parameters: [validated.name, validated.symbol, validated.supply, Number(TOKEN_DECIMALS)],
       });
 
       const deployed = deployedContract as {

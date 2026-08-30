@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
     "test:upload": "node tests/logo-upload.test.mjs",
-    "test": "npm run test:upload"
+    "test:contract": "node tests/trc20-contract.test.mjs",
+    "test": "npm run test:upload && npm run test:contract"
   },
   "dependencies": {
     "next": "16.3.0",

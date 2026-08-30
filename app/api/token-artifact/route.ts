@@ -38,7 +38,7 @@ function assertExpectedConstructor(abi: unknown) {
     ? constructorItem.inputs.map((input) => input?.type)
     : [];
 
-  const expectedInputTypes = ["string", "string", "uint256"];
+  const expectedInputTypes = ["string", "string", "uint256", "uint8"];
 
   if (
     inputTypes.length !== expectedInputTypes.length ||

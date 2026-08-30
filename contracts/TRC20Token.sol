@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 contract TRC20Token {
     string private _name;
     string private _symbol;
-    uint8 private constant _decimals = 18;
+    uint8 private immutable _decimals;
 
     uint256 private _totalSupply;
 
@@ -26,16 +26,25 @@ contract TRC20Token {
     constructor(
         string memory tokenName,
         string memory tokenSymbol,
-        uint256 initialSupply
+        uint256 initialSupply,
+        uint8 tokenDecimals
     ) {
         require(bytes(tokenName).length > 0, "Token name is required");
         require(bytes(tokenSymbol).length > 0, "Token symbol is required");
         require(initialSupply > 0, "Initial supply must be greater than zero");
+        require(tokenDecimals <= 18, "Decimals must be 18 or fewer");
 
         _name = tokenName;
         _symbol = tokenSymbol;
+        _decimals = tokenDecimals;
 
-        uint256 supply = initialSupply * (10 ** uint256(_decimals));
+        uint256 multiplier = 10 ** uint256(tokenDecimals);
+        require(
+            initialSupply <= type(uint256).max / multiplier,
+            "Initial supply exceeds uint256 limit"
+        );
+
+        uint256 supply = initialSupply * multiplier;
 
         _totalSupply = supply;
         _balances[msg.sender] = supply;
@@ -51,7 +60,7 @@ contract TRC20Token {
         return _symbol;
     }
 
-    function decimals() external pure returns (uint8) {
+    function decimals() external view returns (uint8) {
         return _decimals;
     }
 

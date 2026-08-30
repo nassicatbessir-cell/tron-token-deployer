@@ -25,7 +25,7 @@ interface TronContractFactory {
     bytecode: string;
     feeLimit: number;
     callValue: number;
-    parameters: [string, string, string];
+    parameters: [string, string, string, number];
   }) => Promise<unknown>;
 }
 

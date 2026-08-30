@@ -258,7 +258,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const normalizedDecimals = Number(decimals ?? 18);
+    const normalizedDecimals = Number(decimals ?? 6);
 
     if (!Number.isInteger(normalizedDecimals) || normalizedDecimals < 0 || normalizedDecimals > 18) {
       return noStoreJson(
