@@ -85,6 +85,102 @@
           gap: 13px;
         }
 
+        .tronPulse {
+          position: relative;
+          color: #ff174d;
+          animation: tronFloat 3s ease-in-out infinite;
+        }
+
+        .tronPulse::before {
+          content: "";
+          position: absolute;
+          inset: -7px;
+          border-radius: 15px;
+          border: 1px solid rgba(255, 23, 77, 0.45);
+          animation: tronRing 2.4s ease-out infinite;
+          pointer-events: none;
+        }
+
+        .tronPulse svg {
+          width: 28px;
+          height: 28px;
+          filter: drop-shadow(0 0 9px rgba(255, 23, 77, 0.75));
+        }
+
+        @keyframes tronRing {
+          0% {
+            transform: scale(0.82);
+            opacity: 0.8;
+          }
+          75%, 100% {
+            transform: scale(1.25);
+            opacity: 0;
+          }
+        }
+
+        @keyframes tronFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-2px); }
+        }
+
+        .heroEyebrow {
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          flex-wrap: wrap;
+        }
+
+        .terminalMini {
+          min-width: 250px;
+          max-width: 310px;
+          height: 31px;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 0 10px;
+          border: 1px solid rgba(55, 223, 136, 0.2);
+          border-radius: 7px;
+          background: rgba(3, 14, 9, 0.75);
+          box-shadow:
+            inset 0 0 18px rgba(55, 223, 136, 0.035),
+            0 0 22px rgba(55, 223, 136, 0.05);
+          overflow: hidden;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 9px;
+          white-space: nowrap;
+        }
+
+        .terminalPrompt {
+          color: #37df88;
+          font-weight: 900;
+        }
+
+        .terminalText {
+          color: #67d99a;
+          overflow: hidden;
+          width: 0;
+          animation: terminalTyping 4s steps(31, end) infinite;
+        }
+
+        .terminalCursor {
+          width: 5px;
+          height: 12px;
+          background: #37df88;
+          box-shadow: 0 0 8px rgba(55, 223, 136, 0.8);
+          animation: terminalBlink 0.75s steps(2) infinite;
+          flex-shrink: 0;
+        }
+
+        @keyframes terminalTyping {
+          0%, 8% { width: 0; }
+          45%, 70% { width: 205px; }
+          88%, 100% { width: 0; }
+        }
+
+        @keyframes terminalBlink {
+          50% { opacity: 0; }
+        }
+
         .brandMark {
           width: 42px;
           height: 42px;
@@ -266,15 +362,42 @@
           color: #596174;
         }
 
-        .logoPlaceholder span {
+        .logoPulse {
+          width: 58px;
+          height: 58px;
+          margin: 0 auto 9px;
+          display: grid;
+          place-items: center;
+          border-radius: 17px;
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          background: radial-gradient(circle, rgba(255, 23, 77, 0.14), rgba(12, 14, 23, 0.7));
+          box-shadow: 0 0 0 0 rgba(255, 23, 77, 0.28);
+          animation: uploadPulse 2.1s ease-out infinite;
+        }
+
+        .logoPulse span {
           display: block;
-          font-size: 38px;
+          font-size: 31px;
+          line-height: 1;
           font-weight: 200;
+          color: #ff5278;
         }
 
         .logoPlaceholder small {
           font-size: 8px;
           letter-spacing: 0.2em;
+        }
+
+        @keyframes uploadPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(255, 23, 77, 0.28);
+          }
+          65% {
+            box-shadow: 0 0 0 15px rgba(255, 23, 77, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(255, 23, 77, 0);
+          }
         }
 
         label {
@@ -310,11 +433,46 @@
         }
 
         .upload {
-          border: 1px dashed rgba(255, 255, 255, 0.13);
-          padding: 14px;
-          border-radius: 10px;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          border: 1px solid rgba(255, 38, 78, 0.22);
+          padding: 15px 16px;
+          border-radius: 12px;
           cursor: pointer;
-          color: #aab2c3;
+          color: #c5ccda;
+          background:
+            linear-gradient(100deg, rgba(255, 23, 77, 0.08), rgba(104, 31, 255, 0.06)),
+            rgba(255, 255, 255, 0.025);
+          box-shadow: inset 0 0 22px rgba(255, 23, 77, 0.025);
+          transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+          overflow: hidden;
+        }
+
+        .upload::after {
+          content: "SELECT IMAGE";
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: 0.14em;
+          color: #fff;
+          padding: 9px 11px;
+          border-radius: 8px;
+          background: linear-gradient(110deg, #ff174d, #b51fff);
+          box-shadow: 0 0 20px rgba(255, 23, 77, 0.2);
+          animation: uploadButtonPulse 2.2s ease-in-out infinite;
+        }
+
+        .upload:hover {
+          transform: translateY(-1px);
+          border-color: rgba(255, 38, 78, 0.55);
+          box-shadow: 0 10px 28px rgba(255, 23, 77, 0.1);
+        }
+
+        @keyframes uploadButtonPulse {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(1.22); }
         }
 
         .upload input {

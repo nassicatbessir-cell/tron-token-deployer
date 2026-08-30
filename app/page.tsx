@@ -749,7 +749,12 @@ export default function Home() {
 
       <header className="topbar">
         <div className="brand">
-          <div className="brandMark">T</div>
+          <div className="brandMark tronPulse" aria-label="TRON">
+            <svg viewBox="0 0 64 64" role="img" aria-hidden="true">
+              <path d="M8 8h48L32 56 8 8Z" fill="none" stroke="currentColor" strokeWidth="5" strokeLinejoin="round"/>
+              <path d="M8 8l24 13 24-13M32 21v35M20 15l12 6 12-6" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinejoin="round"/>
+            </svg>
+          </div>
           <div>
             <strong>TRON LAUNCHPAD</strong>
             <span>TRC20 TOKEN DEPLOYER</span>
@@ -781,7 +786,16 @@ export default function Home() {
 
       <section className="hero">
         <div className="heroText">
-          <div className="eyebrow">WEB3 TOKEN LAUNCHPAD</div>
+          <div className="heroEyebrow">
+            <div className="eyebrow">WEB3 TOKEN LAUNCHPAD</div>
+            <div className="terminalMini" aria-label="Live terminal">
+              <span className="terminalPrompt">$</span>
+              <span className="terminalText">
+                deploy --network tron --token
+              </span>
+              <span className="terminalCursor" />
+            </div>
+          </div>
 
           <h1>
             CREATE.
@@ -839,8 +853,10 @@ export default function Home() {
               <img src={logoPreview} alt="Token logo preview" />
             ) : (
               <div className="logoPlaceholder">
-                <span>+</span>
-                <small>TOKEN LOGO</small>
+                <div className="logoPulse">
+                  <span>+</span>
+                </div>
+                <small>NO LOGO SELECTED</small>
               </div>
             )}
           </div>
