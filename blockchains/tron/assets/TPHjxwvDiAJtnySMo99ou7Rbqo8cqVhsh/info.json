@@ -1,0 +1,8 @@
+{
+  "name": "Tether USD",
+  "symbol": "USDT",
+  "decimals": 6,
+  "logo": "https://gateway.pinata.cloud/ipfs/Qme4rMDSqrKXvFVTk8z3MHFGv2ACLjSWPoeg8gtM8ybwPT",
+  "description": "USDT stablecoin on TRON",
+  "website": "https://tron.network/usdt"
+}
