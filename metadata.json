@@ -1,8 +1,10 @@
 {
-  "name": "Tether USD",
-  "symbol": "USDT",
+  "name": "Team Test Token",
+  "symbol": "TEST",
   "decimals": 6,
-  "logo": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/assets/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t/logo.png",
-  "description": "USDT stablecoin on TRON",
-  "website": "https://tron.network/usdt"
+  "contractAddress": "TPHjxcwuDiAJtnySMo99ou7Rbqo8cqVhsh",
+  "description": "Team test TRC-20 token on TRON",
+  "logo": "https://raw.githubusercontent.com/nassicatbessir-cell/justlists/main/assets/trc20/TPHjxcwuDiAJtnySMo99ou7Rbqo8cqVhsh/logo.png",
+  "website": "",
+  "chain": "TRON_MAINNET"
 }
