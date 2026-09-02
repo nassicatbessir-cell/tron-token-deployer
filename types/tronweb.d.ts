@@ -41,9 +41,47 @@ interface TronWebLike {
   address?: {
     fromHex: (value: string) => string;
   };
+
   trx?: {
     getBalance?: (address: string) => Promise<unknown>;
+    sign?: (transaction: unknown) => Promise<unknown>;
+    sendRawTransaction?: (signedTransaction: unknown) => Promise<{
+      result?: boolean;
+      message?: string;
+      txid?: string;
+      transaction?: {
+        txID?: string;
+      };
+    }>;
   };
+
+  utils?: {
+    abi?: {
+      encodeParamsV2ByABI?: (
+        abi: unknown,
+        parameters: unknown[]
+      ) => string;
+    };
+  };
+
+  transactionBuilder?: {
+    createSmartContract?: (
+      options: {
+        abi: unknown;
+        bytecode: string;
+        feeLimit: number;
+        callValue: number;
+        parameters: string;
+        name: string;
+      },
+      issuerAddress: string
+    ) => Promise<{
+      contract_address?: string;
+      contractAddress?: string;
+      txID?: string;
+    }>;
+  };
+
   contract?: () => TronContractFactory;
 }
 

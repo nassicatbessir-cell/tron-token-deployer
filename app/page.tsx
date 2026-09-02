@@ -657,28 +657,75 @@ export default function Home() {
         ? artifact.bytecode
         : `0x${artifact.bytecode}`;
 
+      if (!tronWeb) {
+        throw new Error("TronWeb is not available from TronLink.");
+      }
+
+      if (!artifact.constructorAbi?.inputs) {
+        throw new Error("Contract constructor ABI is missing.");
+      }
+
+      const encodeParamsV2ByABI = tronWeb.utils?.abi?.encodeParamsV2ByABI;
+      const createSmartContract =
+        tronWeb.transactionBuilder?.createSmartContract;
+      const signTransaction = tronWeb.trx?.sign;
+      const sendRawTransaction = tronWeb.trx?.sendRawTransaction;
+
+      if (
+        !encodeParamsV2ByABI ||
+        !createSmartContract ||
+        !signTransaction ||
+        !sendRawTransaction
+      ) {
+        throw new Error(
+          "TronLink/TronWeb does not expose the required deployment APIs."
+        );
+      }
+
+      setStatus("Preparing deployment transaction...");
+
+      const constructorParameters = encodeParamsV2ByABI(
+        artifact.constructorAbi as never,
+        [validated.name, validated.symbol, validated.supply, validated.decimals]
+      );
+
+      const deploymentTransaction = await createSmartContract(
+        {
+          abi: artifact.abi as never,
+          bytecode: bytecode.replace(/^0x/, ""),
+          feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
+          callValue: 0,
+          parameters: constructorParameters,
+          name: validated.name,
+        },
+        activeWallet
+      );
+
       setStatus("Waiting for TronLink confirmation...");
 
-      const deployedContract = await window.tronWeb?.contract?.().new({
-        abi: artifact.abi,
-        bytecode,
-        feeLimit: TRON_NETWORK_CONFIG[activeNetwork].feeLimit,
-        callValue: 0,
-        parameters: [validated.name, validated.symbol, validated.supply, validated.decimals],
-      });
+      const signedTransaction = await signTransaction(deploymentTransaction);
+      const broadcastResult =
+        await sendRawTransaction(signedTransaction);
 
-      const deployed = deployedContract as {
-        address?: string;
-        _address?: string;
-        options?: { address?: string };
-        transaction?: { txID?: string; txId?: string };
-        txID?: string;
-      } | null;
+      if (!broadcastResult?.result) {
+        throw new Error(
+          broadcastResult?.message || "TRON rejected the deployment transaction."
+        );
+      }
+
       const rawAddress =
-        deployed?.address || deployed?._address || deployed?.options?.address;
-      const address = normalizeContractAddress(window.tronWeb, rawAddress);
+        deploymentTransaction?.contract_address ||
+        deploymentTransaction?.contractAddress ||
+        "";
+
+      const address = normalizeContractAddress(tronWeb, rawAddress);
+
       const txId =
-        deployed?.transaction?.txID || deployed?.transaction?.txId || deployed?.txID || "";
+        deploymentTransaction?.txID ||
+        broadcastResult?.txid ||
+        broadcastResult?.transaction?.txID ||
+        "";
+
 
       if (!address || !isValidTronAddress(address, window.tronWeb)) {
         throw new Error("Deployment completed but a valid contract address was not returned.");
