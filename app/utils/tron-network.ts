@@ -57,7 +57,7 @@ export const TRON_NETWORK_CONFIG = {
     explorerUrl: "https://tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON MAINNET",
-    minimumRecommendedBalanceSun: 100_000_000n,
+    minimumRecommendedBalanceSun: 0n,
   },
   [TronNetwork.NILE_TESTNET]: {
     name: "TRON Nile Testnet",
@@ -66,7 +66,7 @@ export const TRON_NETWORK_CONFIG = {
     explorerUrl: "https://nile.tronscan.org",
     feeLimit: 500_000_000,
     displayName: "TRON NILE",
-    minimumRecommendedBalanceSun: 100_000_000n,
+    minimumRecommendedBalanceSun: 0n,
   },
 } as const;
 
